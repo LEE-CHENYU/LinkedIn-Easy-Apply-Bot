@@ -32,7 +32,6 @@ positions:
  - Analyst
  - Accounting
  - Banking
- - Intern
  #- ...
 locations:
  - New York
@@ -58,10 +57,14 @@ titleBlacklist:
 # Won't apply for the job if any of the provided
 # regular expressions is a match.
 #**************************************************
-blacklistDescriptionRegex:
- - '[1-9]\+? years?'
+blacklistDescriptionSentences:
+#  - '[1-9]\+? years?'
 #  - '[1-2][0-9]+\+? years'
 #  - '(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
+ # - '(experience|deep knowledge|knowledge|expertise|excellence) (in|of|at|with|working with) (cpp|c\+\+|c|c#|java|docker|\.net|aws|gcp|azure)'
+ # - '[אבגדהוזחטיכלמנסעפצקרשתןץףםך]+'
+ # - '((c\+\+|cpp).*){3,}'
+ # - 'knowledge .* CUDA programming'
 
 uploads:
  resume: /Users/lichenyu/py/linkedin_bot/resume.pdf
