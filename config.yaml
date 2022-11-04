@@ -30,9 +30,9 @@ date:
  
 positions:
  - Analyst
- - Accounting
  - Banking
- - Intern
+ - Sales/Trading
+ - Accounting
  #- ...
 locations:
  - New York
@@ -49,8 +49,8 @@ companyBlacklist:
  #- company2
 
 titleBlacklist:
- #- word1
- #- word2
+ - HR
+ - Human Resources
 
 #**************************************************
 # A list of regular expressions to test against
@@ -60,8 +60,9 @@ titleBlacklist:
 #**************************************************
 blacklistDescriptionRegex:
  - '[1-9]\+? years?'
-#  - '[1-2][0-9]+\+? years'
-#  - '(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
+ - '[1-2][0-9]+\+? years'
+ - '(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
+ - '(Local|local) dipoloma'
 
 uploads:
  resume: /Users/lichenyu/py/linkedin_bot/resume.pdf
@@ -103,6 +104,8 @@ universityGpa: 3.7
 # ------------ Additional parameters: languages ---------------
 languages:
  english: Professional # None, Conversational, Professional, Native or bilingual
+ chinese: Native or bilingual
+ japanese: Professional
 
 
 # ------------ Additional parameters: years of INDUSTRY experience ---------------
