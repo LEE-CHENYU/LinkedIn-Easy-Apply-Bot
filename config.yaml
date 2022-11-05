@@ -31,8 +31,9 @@ date:
 positions:
  - Analyst
  - Banking
- - Accounting
  - Research
+ - Investment
+ - Consulting
  #- ...
 locations:
  - New York
@@ -52,6 +53,14 @@ companyBlacklist:
 titleBlacklist:
  - HR
  - Human Resources
+ - Recruitment
+ - Client Support
+ - Client Service
+ - Customer Service
+ - Client Relationship
+ - Representitve
+ - Associate
+ - Senior
 
 #**************************************************
 # A list of regular expressions to test against
