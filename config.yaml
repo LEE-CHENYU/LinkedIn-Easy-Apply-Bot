@@ -32,7 +32,6 @@ positions:
  - Analyst
  - Banking
  - Research
- - Investment
  - Consulting
  #- ...
 locations:
@@ -73,6 +72,8 @@ blacklistDescriptionRegex:
  - '[1-2][0-9]+\+? years'
  - '(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
  - '(Local|local) dipoloma'
+ - 'Residence'
+ - 'live in'
 
 uploads:
  resume: /Users/lichenyu/py/linkedin_bot/resume.pdf
