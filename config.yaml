@@ -6,7 +6,7 @@ disableAntiLock: False
 remote: False
 
 experienceLevel:
- internship: True
+ internship: False
  entry: True
  associate: False
  mid-senior level: False
