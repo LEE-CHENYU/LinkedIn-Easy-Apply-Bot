@@ -139,7 +139,7 @@ industry:
  Project Management: 0
  Production: 0
  Quality Assurance: 0
- Research: 0
+ Research: 1
  Sales: 0
  Science: 0
  Strategy/Planning: 0
@@ -151,7 +151,7 @@ industry:
  #C++: 0
  Python: 1
  # default to put for any skill that you did not list
- default: 0
+ default: 1
  # end custom ones
 
 
@@ -161,7 +161,7 @@ technology:
  python: 1
  #selenium: 0
  # default to put for any skill that you did not list
- default: 0
+ default: 1
 # ------------ Additional parameters: personal info ---------------
 personalInfo:
  First Name: Chenyu
