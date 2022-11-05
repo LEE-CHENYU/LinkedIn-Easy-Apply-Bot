@@ -23,8 +23,8 @@ jobTypes:
  volunteer: False
  
 date:
- all time: True
- month: False
+ all time: False
+ month: True
  week: False
  24 hours: False
  
