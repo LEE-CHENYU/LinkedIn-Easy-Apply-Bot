@@ -18,7 +18,7 @@ jobTypes:
  contract: False
  part-time: False
  temporary: False
- internship: True
+ internship: False
  other: False
  volunteer: False
  
@@ -36,6 +36,7 @@ positions:
  #- ...
 locations:
  - New York
+ - United States
  - Tokyo
  - Singapore
  - HongKong
