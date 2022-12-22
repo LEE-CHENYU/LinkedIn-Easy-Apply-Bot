@@ -29,21 +29,25 @@ date:
  24 hours: False
  
 positions:
+ - Credit
+ - Fix income
+ - Equity
+ - Wealth Management
+ - Web3
+ - Data
+ - Analytics
  - Analyst
- - Banking
- - Research
- - Consulting
+ - Japanese
  #- ...
 locations:
  - New York
- - United States
- - Tokyo
  - Singapore
  - HongKong
- #- ...
+ - Tokyo
+ - Shanghai
 distance: 25
 
-outputFileDirectory: /Users/lichenyu/py/linkedin_bot
+outputFileDirectory: /Users/lichenyu/py/linkedin_bot/
 
 companyBlacklist:
  #- company
@@ -53,13 +57,20 @@ titleBlacklist:
  - HR
  - Human Resources
  - Recruitment
- - Client Support
- - Client Service
- - Customer Service
- - Client Relationship
- - Representitve
- - Associate
+ - IT
+ - Designer
+ - Compliance
+ - Support
+ - Client
+ - Customer
+ - Service
+ - Relationship
+ - Representatitive
+ - Receptionist
+ - Clerk
  - Senior
+ - Temporary
+ - 事務職
 
 #**************************************************
 # A list of regular expressions to test against
@@ -158,8 +169,9 @@ industry:
  Writing/Editing: 0
  # end normal ones
  # put your custom ones here
- #C++: 0
- Python: 1
+ Merchandising: 0
+ Advertising: 0
+ Wholesale: 0
  # default to put for any skill that you did not list
  default: 1
  # end custom ones

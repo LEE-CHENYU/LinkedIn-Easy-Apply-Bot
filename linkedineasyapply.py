@@ -88,7 +88,7 @@ class LinkedinEasyApply:
                         time.sleep(time_left)
                         minimum_page_time = time.time() + minimum_time
                     if page_sleep % 5 == 0:
-                        sleep_time = random.randint(250, 450) ## (500, 900)
+                        sleep_time = random.randint(120, 240) ## (500, 900)
                         print("Sleeping for " + str(sleep_time/60) + " minutes.")
                         time.sleep(sleep_time)
                         page_sleep += 1
@@ -102,7 +102,7 @@ class LinkedinEasyApply:
                 time.sleep(time_left)
                 minimum_page_time = time.time() + minimum_time
             if page_sleep % 5 == 0:
-                sleep_time = random.randint(250, 450) ## (500, 900)
+                sleep_time = random.randint(120, 240) ## (500, 900)
                 print("Sleeping for " + str(sleep_time/60) + " minutes.")
                 time.sleep(sleep_time)
                 page_sleep += 1
@@ -256,6 +256,7 @@ class LinkedinEasyApply:
                     if 'please enter a valid answer' in self.browser.page_source.lower() or 'file is required' in self.browser.page_source.lower():
                         retries -= 1
                         print("Retrying application, attempts left: " + str(retries))
+
                     else:
                         break
                 except:
@@ -411,8 +412,8 @@ class LinkedinEasyApply:
                         text_field_type = 'text'
 
                     to_enter = ''
-                    if 'experience do you currently have' in question_text:
-                        no_of_years = self.industry_default
+                    if ('experience do you currently have' or 'many years of working experience do you have')in question_text:
+                        no_of_years = 0 # self.industry_default
 
                         for industry in self.industry:
                             if industry.lower() in question_text:
@@ -420,8 +421,8 @@ class LinkedinEasyApply:
                                 break
 
                         to_enter = no_of_years
-                    elif 'many years of work experience do you have using' in question_text:
-                        no_of_years = self.technology_default
+                    elif ('many years of work experience do you have using' or 'many years of work experience do you have with') in question_text:
+                        no_of_years = 0 # self.technology_default
 
                         for technology in self.technology:
                             if technology.lower() in question_text:
@@ -491,7 +492,7 @@ class LinkedinEasyApply:
                         self.select_dropdown(dropdown_field, proficiency)
                     elif 'country code' in question_text:
                         self.select_dropdown(dropdown_field, self.personal_info['Phone Country Code'])
-                    elif 'north korea' in question_text:
+                    elif 'united states' in question_text:
 
                         choice = ""
 
@@ -679,7 +680,8 @@ class LinkedinEasyApply:
 
     def write_to_file(self, company, job_title, link, location, search_location):
         to_write = [company, job_title, link, location]
-        file_path = self.output_file_directory + self.file_name + search_location + ".csv"
+        current_time = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+        file_path = self.output_file_directory + self.file_name + search_location + current_time + ".csv"
 
         with open(file_path, 'a') as f:
             writer = csv.writer(f)
