@@ -30,21 +30,20 @@ date:
  
 positions:
  - Credit
- - Fix income
- - Equity
  - Wealth Management
  - Web3
  - Data
- - Analytics
+ - Analysis
  - Analyst
- - Japanese
+#  - Japanese
  #- ...
 locations:
- - New York
- - Singapore
- - HongKong
+#  - New York
+#  - HongKong
+#  - Shanghai
  - Tokyo
- - Shanghai
+ - Singapore
+ - Vietnam
 distance: 25
 
 outputFileDirectory: /Users/lichenyu/py/linkedin_bot/
@@ -82,6 +81,9 @@ blacklistDescriptionRegex:
  - '[1-9]\+? years?'
  - '[1-2][0-9]+\+? years'
  - '(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
+ - '[1-9]\+? 年?'
+ - '[1-2][0-9]+\+? 年'
+ - '以上工作经验'
  - '(Local|local) dipoloma'
  - 'Residence'
  - 'live in'

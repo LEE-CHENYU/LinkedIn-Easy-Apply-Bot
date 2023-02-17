@@ -681,7 +681,7 @@ class LinkedinEasyApply:
     def write_to_file(self, company, job_title, link, location, search_location):
         to_write = [company, job_title, link, location]
         current_time = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
-        file_path = self.output_file_directory + self.file_name + search_location + current_time + ".csv"
+        file_path = self.output_file_directory + self.file_name + search_location + ".csv"
 
         with open(file_path, 'a') as f:
             writer = csv.writer(f)
