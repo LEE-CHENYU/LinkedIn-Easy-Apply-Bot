@@ -1,4 +1,4 @@
-import time, random, csv, pyautogui, pdb, traceback, sys, re, os
+import time, random, csv, pyautogui, pdb, traceback, sys, re, os, signal
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
@@ -7,6 +7,31 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from datetime import date
 from itertools import product
+from functools import wraps
+
+
+def timeout(seconds):
+    """Decorator to add timeout to functions"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Function {func.__name__} timed out after {seconds} seconds")
+            
+            # Set the signal handler and alarm
+            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                # Restore the old signal handler and cancel the alarm
+                signal.signal(signal.SIGALRM, old_handler)
+                signal.alarm(0)
+            
+            return result
+        return wrapper
+    return decorator
 
 
 class LinkedinEasyApply:
@@ -53,16 +78,33 @@ class LinkedinEasyApply:
         
         # Counter for failed applications in this run
         self.failed_application_count = 0
+        
+        # Performance configuration
+        self.performance_config = parameters.get('performance', {})
+        self.fast_mode = self.performance_config.get('fast_mode', False)
+        self.debug_mode = self.performance_config.get('debug_mode', True)
+        self.application_timeout = self.performance_config.get('application_timeout_minutes', 5)
+        self.max_form_steps = self.performance_config.get('max_form_steps', 20)
+        
+        # Cache for successful selectors
+        self.selector_cache = {}
+        
+        # Set sleep times based on fast mode
+        if self.fast_mode:
+            self.sleep_multiplier = 0.5
+            print("Fast mode enabled - reduced sleep times")
+        else:
+            self.sleep_multiplier = 1.0
 
 
     def login(self):
         try:
             self.browser.get("https://www.linkedin.com/login")
-            time.sleep(random.uniform(5, 10))
+            time.sleep(random.uniform(2, 4) * self.sleep_multiplier)
             self.browser.find_element(By.ID, "username").send_keys(self.email)
             self.browser.find_element(By.ID, "password").send_keys(self.password)
             self.browser.find_element(By.CSS_SELECTOR, ".btn__primary--large").click()
-            time.sleep(random.uniform(5, 10))
+            time.sleep(random.uniform(3, 5) * self.sleep_multiplier)
         except TimeoutException:
             raise Exception("Could not login!")
 
@@ -94,7 +136,7 @@ class LinkedinEasyApply:
                     job_page_number += 1
                     print("Going to job page " + str(job_page_number))
                     self.next_job_page(position, location_url, job_page_number)
-                    time.sleep(random.uniform(1.5, 3.5))
+                    time.sleep(random.uniform(1, 2) * self.sleep_multiplier)
                     print("Starting the application process for this page...")
                     self.apply_jobs(location)
                     print("Applying to jobs on this page has been completed!")
@@ -105,7 +147,10 @@ class LinkedinEasyApply:
                         time.sleep(time_left)
                         minimum_page_time = time.time() + minimum_time
                     if page_sleep % 5 == 0:
-                        sleep_time = random.randint(120, 240) ## (500, 900)
+                        if self.fast_mode:
+                            sleep_time = random.randint(60, 120)  # Reduced from 120-240
+                        else:
+                            sleep_time = random.randint(120, 240)
                         print("Sleeping for " + str(sleep_time/60) + " minutes.")
                         time.sleep(sleep_time)
                         page_sleep += 1
@@ -155,9 +200,8 @@ class LinkedinEasyApply:
             # Wait for page to fully load with explicit wait
             wait = WebDriverWait(self.browser, 10)
             
-            # Try multiple possible selectors for job results with WebDriverWait
-            job_results = None
-            selectors_to_try = [
+            # Use smart element finder for job results
+            job_results_selectors = [
                 (By.CLASS_NAME, "jobs-search-results-list"),
                 (By.CLASS_NAME, "scaffold-layout__list-container"),
                 (By.CLASS_NAME, "jobs-search-results"),
@@ -165,59 +209,36 @@ class LinkedinEasyApply:
                 (By.CSS_SELECTOR, "[class*='jobs-search-results']"),
                 (By.CSS_SELECTOR, "div.jobs-search__results-list"),
                 (By.CSS_SELECTOR, "ul.scaffold-layout__list-container"),
-                (By.CSS_SELECTOR, "[data-job-id]")  # Look for elements with job ID
+                (By.CSS_SELECTOR, "[data-job-id]")
             ]
             
-            for by_type, selector in selectors_to_try:
-                try:
-                    job_results = wait.until(EC.presence_of_element_located((by_type, selector)))
-                    print(f"Found job results using {by_type}: {selector}")
-                    break
-                except:
-                    continue
+            job_results = self.smart_find_element(job_results_selectors, timeout=10)
             
             if not job_results:
                 print("Could not find job results container after trying all selectors")
-                # Try to find any list that might contain jobs
-                try:
-                    job_results = self.browser.find_element(By.CSS_SELECTOR, "ul")
-                    print("Found a UL element as fallback")
-                except:
-                    raise Exception("Could not find any job search results on page")
+                raise Exception("Could not find any job search results on page")
             
             self.scroll_slow(job_results)
             self.scroll_slow(job_results, step=300, reverse=True)
 
             # Try multiple selectors for job list items
             
-            # First try the most common selector - divs with data-job-id
-            try:
-                job_list = self.browser.find_elements(By.CSS_SELECTOR, "div[data-job-id]")
-                if job_list:
-                    print(f"Found {len(job_list)} jobs using div[data-job-id] selector")
-            except:
-                pass
+            # Use smart elements finder for job list items
+            job_item_selectors = [
+                (By.CSS_SELECTOR, "div[data-job-id]"),
+                (By.CLASS_NAME, "job-card-container"),
+                (By.CLASS_NAME, "jobs-search-results__list-item"),
+                (By.CLASS_NAME, "scaffold-layout__list-item"),
+                (By.CLASS_NAME, "jobs-search-results-list__list-item"),
+                (By.CSS_SELECTOR, "li[data-occludable-job-id]"),
+                (By.CSS_SELECTOR, ".job-card-list"),
+                (By.CSS_SELECTOR, "[class*='job-card-container']")
+            ]
             
-            # If that didn't work, try other selectors
-            if not job_list:
-                item_selectors = [
-                    (By.CLASS_NAME, "job-card-container"),
-                    (By.CLASS_NAME, "jobs-search-results__list-item"),
-                    (By.CLASS_NAME, "scaffold-layout__list-item"),
-                    (By.CLASS_NAME, "jobs-search-results-list__list-item"),
-                    (By.CSS_SELECTOR, "li[data-occludable-job-id]"),
-                    (By.CSS_SELECTOR, ".job-card-list"),
-                    (By.CSS_SELECTOR, "[class*='job-card-container']")
-                ]
-                
-                for by_type, selector in item_selectors:
-                    try:
-                        job_list = self.browser.find_elements(by_type, selector)
-                        if job_list:
-                            print(f"Found {len(job_list)} jobs using {by_type}: {selector}")
-                            break
-                    except Exception as e:
-                        continue
+            job_list = self.smart_find_elements(job_item_selectors, timeout=5)
+            
+            if job_list:
+                print(f"Found {len(job_list)} jobs")
             
             # Debug: print first job element if found
             if job_list:
@@ -336,7 +357,7 @@ class LinkedinEasyApply:
                         print(f"Could not find clickable element for job: {job_title}")
                         continue
 
-                    time.sleep(random.uniform(3, 5))
+                    time.sleep(random.uniform(2, 3) * self.sleep_multiplier)
                     
                     
                     # Initialize inner_description with empty string
@@ -422,25 +443,25 @@ class LinkedinEasyApply:
         
         return full_folder_path
 
+    @timeout(300)  # 5 minute timeout for each application
     def apply_to_job(self, job_title="Unknown", company="Unknown"):
-        # Create debug folder for this application attempt
+        # Debug folder will be created only if application fails
         debug_folder = None
         easy_apply_button = None
 
-        try:
-            # Try multiple selectors for the Easy Apply button
-            easy_apply_button = self.browser.find_element(By.CLASS_NAME, 'jobs-apply-button')
-        except:
-            try:
-                # Alternative selector
-                easy_apply_button = self.browser.find_element(By.CSS_SELECTOR, "button[aria-label*='Easy Apply']")
-            except:
-                try:
-                    # Another alternative
-                    easy_apply_button = self.browser.find_element(By.CSS_SELECTOR, "button.jobs-apply-button")
-                except:
-                    print("Could not find Easy Apply button")
-                    return False
+        # Use smart element finder for Easy Apply button
+        easy_apply_selectors = [
+            (By.CLASS_NAME, 'jobs-apply-button'),
+            (By.CSS_SELECTOR, "button[aria-label*='Easy Apply']"),
+            (By.CSS_SELECTOR, "button.jobs-apply-button"),
+            (By.CSS_SELECTOR, "button[class*='jobs-apply']")
+        ]
+        
+        easy_apply_button = self.smart_find_element(easy_apply_selectors, timeout=5)
+        
+        if not easy_apply_button:
+            print("Could not find Easy Apply button")
+            return False
 
         try:
             job_description_area = self.browser.find_element(By.CLASS_NAME, "jobs-search__job-details--container")
@@ -451,26 +472,19 @@ class LinkedinEasyApply:
 
         print("Applying to the job....")
         
-        # Create debug folder only when we start applying (to avoid creating empty folders)
-        debug_folder = self.create_debug_folder(job_title, company)
-        print(f"Created debug folder: {debug_folder}")
-        
-        # Save page source before clicking Easy Apply
-        with open(f'{debug_folder}/application_start.html', 'w', encoding='utf-8') as f:
-            f.write(self.browser.page_source)
-        print(f"Saved initial application page to {debug_folder}/application_start.html")
-        
         easy_apply_button.click()
         
-        # Wait for modal to appear and save it
-        time.sleep(3)
-        with open(f'{debug_folder}/application_modal.html', 'w', encoding='utf-8') as f:
-            f.write(self.browser.page_source)
-        print(f"Saved application modal page to {debug_folder}/application_modal.html")
+        # Wait for modal to appear
+        time.sleep(2 * self.sleep_multiplier)
 
         button_text = ""
         submit_application_text = 'submit application'
-        while submit_application_text not in button_text.lower():
+        form_step_count = 0
+        
+        while submit_application_text not in button_text.lower() and form_step_count < self.max_form_steps:
+            form_step_count += 1
+            print(f"Processing form step {form_step_count}/{self.max_form_steps}")
+            
             retries = 3
             while retries > 0:
                 try:
@@ -482,18 +496,25 @@ class LinkedinEasyApply:
                             self.unfollow()
                         except:
                             print("Failed to unfollow company!")
-                    time.sleep(random.uniform(1.5, 2.5))
+                    time.sleep(random.uniform(1, 1.5) * self.sleep_multiplier)
                     next_button.click()
-                    time.sleep(random.uniform(3.0, 5.0))
+                    time.sleep(random.uniform(2, 3) * self.sleep_multiplier)
 
                     if 'please enter a valid answer' in self.browser.page_source.lower() or 'file is required' in self.browser.page_source.lower():
                         retries -= 1
                         print("Retrying application, attempts left: " + str(retries))
-                        # Save page source when retry is needed
-                        retry_count = 3 - retries
-                        with open(f'{debug_folder}/failed_application_retry_{retry_count}.html', 'w', encoding='utf-8') as f:
-                            f.write(self.browser.page_source)
-                        print(f"Saved page source to {debug_folder}/failed_application_retry_{retry_count}.html")
+                        
+                        # Create debug folder only when needed and debug mode is enabled
+                        if self.debug_mode and debug_folder is None:
+                            debug_folder = self.create_debug_folder(job_title, company)
+                            print(f"Created debug folder: {debug_folder}")
+                        
+                        # Save page source when retry is needed (only in debug mode)
+                        if self.debug_mode and debug_folder:
+                            retry_count = 3 - retries
+                            with open(f'{debug_folder}/failed_application_retry_{retry_count}.html', 'w', encoding='utf-8') as f:
+                                f.write(self.browser.page_source)
+                            print(f"Saved page source to {debug_folder}/failed_application_retry_{retry_count}.html")
 
                     else:
                         break
@@ -501,24 +522,48 @@ class LinkedinEasyApply:
                     traceback.print_exc()
                     raise Exception("Failed to apply to job!")
             if retries == 0:
-                print("All retries exhausted, saving final failed page")
-                # Save the final failed page
-                with open(f'{debug_folder}/failed_application_final.html', 'w', encoding='utf-8') as f:
-                    f.write(self.browser.page_source)
-                print(f"Saved final failed page to {debug_folder}/failed_application_final.html")
+                print("All retries exhausted")
+                
+                # Create debug folder only when needed and debug mode is enabled
+                if self.debug_mode and debug_folder is None:
+                    debug_folder = self.create_debug_folder(job_title, company)
+                    print(f"Created debug folder: {debug_folder}")
+                
+                # Save the final failed page (only in debug mode)
+                if self.debug_mode and debug_folder:
+                    with open(f'{debug_folder}/failed_application_final.html', 'w', encoding='utf-8') as f:
+                        f.write(self.browser.page_source)
+                    print(f"Saved final failed page to {debug_folder}/failed_application_final.html")
                 
                 traceback.print_exc()
                 try:
                     self.browser.find_element(By.CLASS_NAME, 'artdeco-modal__dismiss').click()
-                    time.sleep(random.uniform(3, 5))
+                    time.sleep(random.uniform(2, 3) * self.sleep_multiplier)
                     self.browser.find_elements(By.CLASS_NAME, 'artdeco-modal__confirm-dialog-btn')[1].click()
-                    time.sleep(random.uniform(3, 5))
+                    time.sleep(random.uniform(2, 3) * self.sleep_multiplier)
                 except Exception as e:
                     print(f"Error closing modal: {str(e)}")
                 raise Exception("Failed to apply to job!")
+        
+        # Check if we hit the form step limit
+        if form_step_count >= self.max_form_steps:
+            print(f"Application exceeded maximum form steps ({self.max_form_steps})")
+            
+            # Create debug folder only when needed and debug mode is enabled
+            if self.debug_mode and debug_folder is None:
+                debug_folder = self.create_debug_folder(job_title, company)
+                print(f"Created debug folder: {debug_folder}")
+            
+            # Save the page where we got stuck (only in debug mode)
+            if self.debug_mode and debug_folder:
+                with open(f'{debug_folder}/stuck_at_step_{form_step_count}.html', 'w', encoding='utf-8') as f:
+                    f.write(self.browser.page_source)
+                print(f"Saved stuck page to {debug_folder}/stuck_at_step_{form_step_count}.html")
+            
+            raise Exception(f"Application form exceeded maximum steps ({self.max_form_steps})")
 
         closed_notification = False
-        time.sleep(random.uniform(3, 5))
+        time.sleep(random.uniform(2, 3) * self.sleep_multiplier)
         try:
             self.browser.find_element(By.CLASS_NAME, 'artdeco-modal__dismiss').click()
             closed_notification = True
@@ -529,7 +574,7 @@ class LinkedinEasyApply:
             closed_notification = True
         except:
             pass
-        time.sleep(random.uniform(3, 5))
+        time.sleep(random.uniform(1, 2) * self.sleep_multiplier)
 
         if closed_notification is False:
             raise Exception("Could not close the applied confirmation window!")
@@ -564,6 +609,73 @@ class LinkedinEasyApply:
             return 'yes'
         else:
             return 'no'
+
+    def smart_find_element(self, selectors, timeout=10):
+        """
+        Smart element finder that tries cached selectors first, then falls back to trying all selectors
+        Args:
+            selectors: List of tuples (By.METHOD, "selector")
+            timeout: WebDriverWait timeout in seconds
+        Returns:
+            WebElement if found, None otherwise
+        """
+        wait = WebDriverWait(self.browser, timeout)
+        
+        # Create a cache key from the selectors
+        cache_key = str(selectors)
+        
+        # Try cached selector first if it exists
+        if cache_key in self.selector_cache:
+            cached_selector = self.selector_cache[cache_key]
+            try:
+                return wait.until(EC.presence_of_element_located(cached_selector))
+            except TimeoutException:
+                # Cache miss, remove from cache and try all selectors
+                del self.selector_cache[cache_key]
+        
+        # Try all selectors
+        for by_type, selector in selectors:
+            try:
+                element = wait.until(EC.presence_of_element_located((by_type, selector)))
+                # Cache the successful selector
+                self.selector_cache[cache_key] = (by_type, selector)
+                return element
+            except TimeoutException:
+                continue
+        
+        return None
+
+    def smart_find_elements(self, selectors, timeout=10):
+        """
+        Smart elements finder that tries cached selectors first
+        """
+        wait = WebDriverWait(self.browser, timeout)
+        
+        cache_key = str(selectors) + "_multiple"
+        
+        # Try cached selector first
+        if cache_key in self.selector_cache:
+            cached_selector = self.selector_cache[cache_key]
+            try:
+                elements = self.browser.find_elements(*cached_selector)
+                if elements:
+                    return elements
+                else:
+                    del self.selector_cache[cache_key]
+            except:
+                del self.selector_cache[cache_key]
+        
+        # Try all selectors
+        for by_type, selector in selectors:
+            try:
+                elements = self.browser.find_elements(by_type, selector)
+                if elements:
+                    self.selector_cache[cache_key] = (by_type, selector)
+                    return elements
+            except:
+                continue
+        
+        return []
 
     def handle_new_form_structure(self):
         """Handle the new LinkedIn form structure with artdeco-text-input elements"""

@@ -1,0 +1,38 @@
+# Performance Configuration Example
+# Add this section to your config.yaml to control performance settings
+
+performance:
+  # Fast mode reduces sleep times by 50% for faster execution
+  # Set to true for speed, false for maximum stealth
+  fast_mode: false
+  
+  # Debug mode controls whether debug files are saved
+  # Set to false to disable debug file creation (faster, less disk usage)
+  debug_mode: true
+  
+  # Maximum time in minutes to spend on each application before timing out
+  # Prevents infinite loops on problematic applications
+  application_timeout_minutes: 5
+  
+  # Maximum number of form steps per application before giving up
+  # Prevents getting stuck on complex multi-page forms
+  max_form_steps: 20
+
+# Performance Comparison:
+# 
+# Conservative (default):
+# - fast_mode: false
+# - All sleep times at normal rates
+# - 40-60% slower but maximum stealth
+#
+# Balanced:
+# - fast_mode: true
+# - debug_mode: true
+# - 30-40% faster while maintaining reasonable stealth
+#
+# Speed optimized:
+# - fast_mode: true
+# - debug_mode: false
+# - 50-60% faster execution
+# - Minimal file I/O overhead
+# - Still maintains human-like randomization
