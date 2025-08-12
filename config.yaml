@@ -195,3 +195,5 @@ eeo:
  vetran: None
  disability: None
  citizenship: Chinese
+
+ formHandlingMode: "ai-only"
