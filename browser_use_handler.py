@@ -42,7 +42,7 @@ class LinkedInFormHandler:
             
             # Create LLM instance for OpenAI
             llm = ChatOpenAI(
-                model="gpt-5",
+                model="gpt-5-mini",
                 api_key=self.api_key
             )
             
@@ -154,7 +154,7 @@ Please fill out this LinkedIn job application form step by step, following these
             from browser_use.llm import ChatOpenAI
             
             llm = ChatOpenAI(
-                model="gpt-5",
+                model="gpt-5-mini",
                 api_key=self.api_key
             )
             
@@ -224,7 +224,7 @@ Be precise and use the information provided above to give accurate answers.
             from browser_use.llm import ChatOpenAI
             
             llm = ChatOpenAI(
-                model="gpt-5",
+                model="gpt-5-mini",
                 api_key=self.api_key
             )
             
