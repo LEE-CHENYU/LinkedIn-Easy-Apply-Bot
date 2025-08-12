@@ -149,9 +149,6 @@ async def main():
             if not success:
                 raise Exception("Failed to initialize browser")
             
-            # Initialize AI agent
-            await bot.initialize_ai_agent()
-            
             # Start the application process
             await bot.login()
             await bot.security_check()

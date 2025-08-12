@@ -19,8 +19,16 @@ from itertools import product
 from functools import wraps
 
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
-from browser_use import Agent, BrowserSession
-from browser_use.llm import ChatOpenAI
+
+# Try to import browser-use (requires Python 3.11+)
+try:
+    from browser_use import Agent, BrowserSession
+    from browser_use.llm import ChatOpenAI
+    BROWSER_USE_AVAILABLE = True
+except ImportError:
+    BROWSER_USE_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("⚠️ browser-use not available (requires Python 3.11+). AI features will be limited.")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -61,7 +69,6 @@ class PlaywrightLinkedInBot:
         self.form_handling_mode = parameters.get('formHandlingMode', 'ai-only')
         self.ai_timeout = parameters.get('aiTimeout', 120)
         self.openai_api_key = self.load_openai_api_key()
-        self.ai_agent = None
         self.ai_success_count = 0
         self.ai_failure_count = 0
         
@@ -135,35 +142,6 @@ class PlaywrightLinkedInBot:
             logger.error(f"❌ Failed to initialize Playwright browser: {str(e)}")
             return False
     
-    async def initialize_ai_agent(self):
-        """Initialize browser-use AI agent with existing page"""
-        if not self.use_ai_forms or not self.openai_api_key:
-            logger.warning("🤖 AI agent initialization skipped - requirements not met")
-            return False
-            
-        try:
-            # Create LLM instance
-            llm = ChatOpenAI(
-                model="gpt-4o",  # Using standard model
-                api_key=self.openai_api_key
-            )
-            
-            # Create browser-use agent with our existing page
-            self.ai_agent = Agent(
-                task="Help fill out LinkedIn job application forms intelligently",
-                llm=llm,
-                browser_session=BrowserSession(page=self.page),  # Use existing page!
-                use_vision=True,
-                save_conversation_path="./logs/browser_use_conversations"
-            )
-            
-            logger.info("🤖 AI agent initialized successfully with existing Playwright page")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize AI agent: {str(e)}")
-            self.use_ai_forms = False
-            return False
     
     async def login(self):
         """Login to LinkedIn using Playwright"""
@@ -345,21 +323,51 @@ class PlaywrightLinkedInBot:
     async def extract_job_info(self, job_element) -> tuple[str, str]:
         """Extract job title and company from job element"""
         try:
-            # Try to get job title
-            title_element = await job_element.query_selector('.job-card-list__title a')
-            if not title_element:
-                title_element = await job_element.query_selector('[data-job-title-for-click]')
+            # Try multiple selectors for job title
+            title_selectors = [
+                '.job-card-list__title a',
+                '.job-card-list__title',
+                'a[data-control-name="job_card_title_link"]',
+                '[data-job-title]',
+                'h3.job-card-list__title',
+                'a.job-card-list__title',
+                '.job-card-container__link span[aria-hidden="true"]'
+            ]
             
-            job_title = await title_element.text_content() if title_element else "Unknown"
-            job_title = job_title.strip() if job_title else "Unknown"
+            job_title = "Unknown"
+            for selector in title_selectors:
+                title_element = await job_element.query_selector(selector)
+                if title_element:
+                    text = await title_element.text_content()
+                    if text and text.strip():
+                        job_title = text.strip()
+                        logger.debug(f"Found job title with selector {selector}: {job_title}")
+                        break
             
-            # Try to get company
-            company_element = await job_element.query_selector('.job-card-container__primary-description')
-            if not company_element:
-                company_element = await job_element.query_selector('[data-job-company]')
+            # Try multiple selectors for company
+            company_selectors = [
+                '.job-card-container__primary-description',
+                '.job-card-container__company-name',
+                'a[data-control-name="company_link"]',
+                '[data-job-company]',
+                'h4.job-card-container__company-name',
+                'a.job-card-container__company-name',
+                '.job-card-container__primary-description a'
+            ]
             
-            company = await company_element.text_content() if company_element else "Unknown"
-            company = company.strip() if company else "Unknown"
+            company = "Unknown"
+            for selector in company_selectors:
+                company_element = await job_element.query_selector(selector)
+                if company_element:
+                    text = await company_element.text_content()
+                    if text and text.strip():
+                        company = text.strip()
+                        logger.debug(f"Found company with selector {selector}: {company}")
+                        break
+            
+            # Log if we couldn't find info
+            if job_title == "Unknown" or company == "Unknown":
+                logger.warning(f"⚠️ Could not extract full job info - Title: {job_title}, Company: {company}")
             
             return job_title, company
             
@@ -416,26 +424,36 @@ class PlaywrightLinkedInBot:
     
     async def apply_with_ai(self, job_title: str, company: str) -> bool:
         """Apply to job using AI form handling"""
-        try:
-            # Initialize AI agent if not already done
-            if not self.ai_agent:
-                success = await self.initialize_ai_agent()
-                if not success:
-                    logger.error("❌ AI agent initialization failed")
-                    return False
+        
+        if not BROWSER_USE_AVAILABLE:
+            logger.error("❌ browser-use not available. Please use Python 3.11+ and install browser-use")
+            return False
             
+        try:
             logger.info(f"🎯 AI applying to: {job_title} at {company}")
             
             # Build AI instructions
             instructions = self.build_ai_instructions(job_title, company)
             
-            # Update agent task with specific instructions
-            self.ai_agent.set_task(instructions)
+            # Create LLM instance
+            llm = ChatOpenAI(
+                model="gpt-4o",
+                api_key=self.openai_api_key
+            )
+            
+            # Create new agent with specific task for this application
+            agent = Agent(
+                task=instructions,
+                llm=llm,
+                browser_session=BrowserSession(page=self.page),
+                use_vision=True,
+                save_conversation_path="./logs/browser_use_conversations"
+            )
             
             # Run AI agent with timeout
             try:
                 result = await asyncio.wait_for(
-                    self.ai_agent.run(max_steps=15),
+                    agent.run(max_steps=15),
                     timeout=self.ai_timeout
                 )
                 
@@ -655,10 +673,6 @@ Please fill out this LinkedIn job application form step by step, following these
     async def cleanup(self):
         """Clean up resources"""
         try:
-            if self.ai_agent:
-                # browser-use agent cleanup
-                logger.info("🤖 Cleaning up AI agent...")
-            
             if self.page:
                 await self.page.close()
                 logger.info("📄 Page closed")
@@ -700,9 +714,6 @@ async def main():
     try:
         # Initialize browser
         await bot.initialize_browser()
-        
-        # Initialize AI agent
-        await bot.initialize_ai_agent()
         
         # Login and start applying
         await bot.login()
