@@ -3,6 +3,8 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from datetime import date
 from itertools import product
 
@@ -131,68 +133,89 @@ class LinkedinEasyApply:
             print("Warning: May not be logged in properly")
             raise Exception("Login required or session expired")
         
+        # Initialize job_list outside try block
+        job_list = []
+        
         try:
-            # Wait for page to load
-            time.sleep(2)
+            # Wait for page to fully load with explicit wait
+            wait = WebDriverWait(self.browser, 10)
             
-            # Try multiple possible selectors for job results
+            # Try multiple possible selectors for job results with WebDriverWait
             job_results = None
             selectors_to_try = [
-                "jobs-search-results-list",
-                "scaffold-layout__list-container", 
-                "jobs-search-results",
-                "jobs-search__results-list"
+                (By.CLASS_NAME, "jobs-search-results-list"),
+                (By.CLASS_NAME, "scaffold-layout__list-container"),
+                (By.CLASS_NAME, "jobs-search-results"),
+                (By.CLASS_NAME, "jobs-search__results-list"),
+                (By.CSS_SELECTOR, "[class*='jobs-search-results']"),
+                (By.CSS_SELECTOR, "div.jobs-search__results-list"),
+                (By.CSS_SELECTOR, "ul.scaffold-layout__list-container"),
+                (By.CSS_SELECTOR, "[data-job-id]")  # Look for elements with job ID
             ]
             
-            for selector in selectors_to_try:
+            for by_type, selector in selectors_to_try:
                 try:
-                    job_results = self.browser.find_element(By.CLASS_NAME, selector)
-                    print(f"Found job results using selector: {selector}")
+                    job_results = wait.until(EC.presence_of_element_located((by_type, selector)))
+                    print(f"Found job results using {by_type}: {selector}")
                     break
                 except:
                     continue
             
             if not job_results:
-                # Try with CSS selector as fallback
+                print("Could not find job results container after trying all selectors")
+                # Try to find any list that might contain jobs
                 try:
-                    job_results = self.browser.find_element(By.CSS_SELECTOR, "[class*='jobs-search-results']")
-                    print("Found job results using CSS selector")
+                    job_results = self.browser.find_element(By.CSS_SELECTOR, "ul")
+                    print("Found a UL element as fallback")
                 except:
-                    print("Could not find job results container")
-                    raise Exception("Could not find job search results on page")
+                    raise Exception("Could not find any job search results on page")
             
             self.scroll_slow(job_results)
             self.scroll_slow(job_results, step=300, reverse=True)
 
             # Try multiple selectors for job list items
-            job_list = []
-            item_selectors = [
-                "jobs-search-results__list-item",
-                "scaffold-layout__list-item",
-                "job-card-container",
-                "jobs-search-results-list__list-item"
-            ]
             
-            for selector in item_selectors:
-                try:
-                    job_list = job_results.find_elements(By.CLASS_NAME, selector)
-                    if job_list:
-                        print(f"Found {len(job_list)} jobs using selector: {selector}")
-                        break
-                except:
-                    continue
-            
-            if not job_list:
-                # Try CSS selector as fallback
-                job_list = job_results.find_elements(By.CSS_SELECTOR, "li[class*='job']")
+            # First try the most common selector - divs with data-job-id
+            try:
+                job_list = self.browser.find_elements(By.CSS_SELECTOR, "div[data-job-id]")
                 if job_list:
-                    print(f"Found {len(job_list)} jobs using CSS selector")
+                    print(f"Found {len(job_list)} jobs using div[data-job-id] selector")
+            except:
+                pass
+            
+            # If that didn't work, try other selectors
+            if not job_list:
+                item_selectors = [
+                    (By.CLASS_NAME, "job-card-container"),
+                    (By.CLASS_NAME, "jobs-search-results__list-item"),
+                    (By.CLASS_NAME, "scaffold-layout__list-item"),
+                    (By.CLASS_NAME, "jobs-search-results-list__list-item"),
+                    (By.CSS_SELECTOR, "li[data-occludable-job-id]"),
+                    (By.CSS_SELECTOR, ".job-card-list"),
+                    (By.CSS_SELECTOR, "[class*='job-card-container']")
+                ]
+                
+                for by_type, selector in item_selectors:
+                    try:
+                        job_list = self.browser.find_elements(by_type, selector)
+                        if job_list:
+                            print(f"Found {len(job_list)} jobs using {by_type}: {selector}")
+                            break
+                    except Exception as e:
+                        continue
+            
+            # Debug: print first job element if found
+            if job_list:
+                print(f"Example job element HTML: {job_list[0].get_attribute('outerHTML')[:500]}...")
+            else:
+                print("No jobs found after trying all selectors")
                     
         except Exception as e:
             print(f"Error finding job results: {str(e)}")
-            raise Exception("No more jobs on this page")
-
+            print(f"job_list has {len(job_list)} items")
+            
         if len(job_list) == 0:
+            print("job_list is empty, raising exception")
             raise Exception("No more jobs on this page")
 
         for job_tile in job_list:
@@ -200,56 +223,60 @@ class LinkedinEasyApply:
 
             # Try multiple selectors for job title
             try:
-                title_selectors = ['job-card-list__title', 'job-card-list__title--link', 'artdeco-entity-lockup__title']
-                for selector in title_selectors:
+                # Try to find the link element which contains the title
+                title_element = None
+                try:
+                    # Most common: link with job-card-list__title class
+                    title_element = job_tile.find_element(By.CSS_SELECTOR, "a.job-card-list__title, a.job-card-list__title--link, a[class*='job-card-container__link']")
+                except:
                     try:
-                        title_element = job_tile.find_element(By.CLASS_NAME, selector)
-                        job_title = title_element.text
-                        if hasattr(title_element, 'get_attribute'):
-                            href = title_element.get_attribute('href')
-                            if href:
-                                link = href.split('?')[0]
-                        break
+                        # Alternative: any link within artdeco-entity-lockup__title
+                        title_element = job_tile.find_element(By.CSS_SELECTOR, ".artdeco-entity-lockup__title a")
                     except:
-                        continue
+                        try:
+                            # Fallback: any link with strong tag containing title
+                            title_element = job_tile.find_element(By.CSS_SELECTOR, "a strong")
+                        except:
+                            pass
                 
-                # If still no title, try CSS selector
-                if not job_title:
-                    title_element = job_tile.find_element(By.CSS_SELECTOR, "a[class*='job-card'][class*='title']")
-                    job_title = title_element.text
-                    link = title_element.get_attribute('href').split('?')[0]
-            except:
+                if title_element:
+                    job_title = title_element.text.strip()
+                    link = title_element.get_attribute('href')
+                    if link:
+                        link = link.split('?')[0]
+            except Exception as e:
+                print(f"Error extracting job title: {str(e)}")
                 pass
                 
             # Try multiple selectors for company
             try:
-                company_selectors = ['job-card-container__company-name', 'job-card-container__primary-description', 'artdeco-entity-lockup__subtitle']
-                for selector in company_selectors:
-                    try:
-                        company = job_tile.find_element(By.CLASS_NAME, selector).text
-                        if company:
-                            break
-                    except:
-                        continue
+                # Based on the HTML structure, company is in artdeco-entity-lockup__subtitle
+                company_element = job_tile.find_element(By.CSS_SELECTOR, ".artdeco-entity-lockup__subtitle, .job-card-container__company-name")
+                company = company_element.text.strip()
             except:
                 pass
                 
             # Try multiple selectors for location
             try:
-                location_selectors = ['job-card-container__metadata-item', 'artdeco-entity-lockup__caption']
-                for selector in location_selectors:
-                    try:
-                        job_location = job_tile.find_element(By.CLASS_NAME, selector).text
-                        if job_location:
-                            break
-                    except:
-                        continue
+                # Location is typically in the first metadata item within caption
+                location_element = job_tile.find_element(By.CSS_SELECTOR, ".artdeco-entity-lockup__caption li:first-child, .job-card-container__metadata-item")
+                job_location = location_element.text.strip()
             except:
                 pass
             try:
-                apply_method = job_tile.find_element(By.CLASS_NAME, 'job-card-container__apply-method').text
+                # Check for Easy Apply - look for the Easy Apply text or icon
+                easy_apply_text = job_tile.find_elements(By.XPATH, ".//*[contains(text(), 'Easy Apply')]")
+                if easy_apply_text:
+                    apply_method = "Easy Apply"
+                else:
+                    # Alternative: check for LinkedIn bug icon which indicates Easy Apply
+                    try:
+                        job_tile.find_element(By.CSS_SELECTOR, "[data-test-icon='linkedin-bug-color-small']")
+                        apply_method = "Easy Apply"
+                    except:
+                        apply_method = "Apply"
             except:
-                pass
+                apply_method = "Apply"
 
             contains_blacklisted_keywords = False
             job_title_parsed = job_title.lower().split(' ')
@@ -262,8 +289,37 @@ class LinkedinEasyApply:
             if company.lower() not in [word.lower() for word in self.company_blacklist] and \
                contains_blacklisted_keywords is False and link not in self.seen_jobs:
                 try:
-                    job_el = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title')
-                    job_el.click()
+                    # Try to find and click the job link element
+                    job_el = None
+                    try:
+                        # Most common: link with job-card-list__title class or similar
+                        job_el = job_tile.find_element(By.CSS_SELECTOR, "a.job-card-list__title, a.job-card-list__title--link, a[class*='job-card-container__link']")
+                    except:
+                        try:
+                            # Alternative: any clickable link within the job tile
+                            job_el = job_tile.find_element(By.CSS_SELECTOR, ".artdeco-entity-lockup__title a")
+                        except:
+                            try:
+                                # Fallback: click the job tile itself if it has data-job-id
+                                if job_tile.get_attribute('data-job-id'):
+                                    job_el = job_tile
+                            except:
+                                pass
+                    
+                    if job_el:
+                        try:
+                            # Try regular click first
+                            job_el.click()
+                        except:
+                            try:
+                                # If regular click fails, try JavaScript click
+                                self.browser.execute_script("arguments[0].click();", job_el)
+                            except:
+                                print(f"Could not click on job: {job_title}")
+                                continue
+                    else:
+                        print(f"Could not find clickable element for job: {job_title}")
+                        continue
 
                     time.sleep(random.uniform(3, 5))
                     
@@ -306,9 +362,11 @@ class LinkedinEasyApply:
                         except Exception:
                             print("Could not write the job to the file! No special characters in the job title/company is allowed!")
                             traceback.print_exc()
-                except:
+                except Exception as e:
+                    print(f"Error applying to job '{job_title}' at '{company}': {str(e)}")
+                    if "no such element" in str(e).lower():
+                        print("Element not found - LinkedIn may have changed their page structure")
                     traceback.print_exc()
-                    print("Could not apply to the job!")
                     pass
             else:
                 print("Job contains blacklisted keyword or company name!")
@@ -318,9 +376,19 @@ class LinkedinEasyApply:
         easy_apply_button = None
 
         try:
+            # Try multiple selectors for the Easy Apply button
             easy_apply_button = self.browser.find_element(By.CLASS_NAME, 'jobs-apply-button')
         except:
-            return False
+            try:
+                # Alternative selector
+                easy_apply_button = self.browser.find_element(By.CSS_SELECTOR, "button[aria-label*='Easy Apply']")
+            except:
+                try:
+                    # Another alternative
+                    easy_apply_button = self.browser.find_element(By.CSS_SELECTOR, "button.jobs-apply-button")
+                except:
+                    print("Could not find Easy Apply button")
+                    return False
 
         try:
             job_description_area = self.browser.find_element(By.CLASS_NAME, "jobs-search__job-details--container")
