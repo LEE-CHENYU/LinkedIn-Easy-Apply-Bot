@@ -30,13 +30,13 @@ date:
  
 positions:
  - Product Manager
+ - Product Owner
+ - Strategist
 locations:
  - San Francisco
  - San Jose
  - New York
  - Seattle
- - Boston
- - Washington
 distance: 100
 
 outputFileDirectory: /Users/lichenyu/py/linkedin_bot/
