@@ -565,9 +565,93 @@ class LinkedinEasyApply:
         else:
             return 'no'
 
+    def handle_new_form_structure(self):
+        """Handle the new LinkedIn form structure with artdeco-text-input elements"""
+        try:
+            # Find all text input fields in the new structure
+            text_inputs = self.browser.find_elements(By.CSS_SELECTOR, "input[class*='artdeco-text-input--input']")
+            
+            for input_field in text_inputs:
+                try:
+                    # Find the associated label
+                    input_id = input_field.get_attribute('id')
+                    label_element = self.browser.find_element(By.CSS_SELECTOR, f"label[for='{input_id}']")
+                    question_text = label_element.text.lower()
+                    
+                    print(f"Processing question: {question_text}")
+                    
+                    to_enter = ''
+                    
+                    # Check if it's a years of experience question
+                    if ('how many years of work experience do you have with' in question_text or
+                        'years of work experience' in question_text):
+                        
+                        # Extract the skill/technology from the question
+                        skill_found = False
+                        no_of_years = self.technology_default
+                        
+                        # Check against technology skills
+                        for technology in self.technology:
+                            if technology.lower() in question_text:
+                                no_of_years = self.technology[technology]
+                                skill_found = True
+                                print(f"Found technology {technology}: {no_of_years} years")
+                                break
+                        
+                        # Check against industry skills if no technology match
+                        if not skill_found:
+                            for industry in self.industry:
+                                if industry.lower() in question_text:
+                                    no_of_years = self.industry[industry]
+                                    skill_found = True
+                                    print(f"Found industry {industry}: {no_of_years} years")
+                                    break
+                        
+                        to_enter = no_of_years
+                        
+                    elif 'grade point average' in question_text or 'gpa' in question_text:
+                        to_enter = self.university_gpa
+                    elif 'first name' in question_text:
+                        to_enter = self.personal_info['First Name']
+                    elif 'last name' in question_text:
+                        to_enter = self.personal_info['Last Name']
+                    elif 'phone' in question_text:
+                        to_enter = self.personal_info['Mobile Phone Number']
+                    else:
+                        # For numeric fields, default to 0; for text fields, use a space
+                        input_type = input_field.get_attribute('type')
+                        if input_type == 'text' and 'numeric' in input_field.get_attribute('id'):
+                            to_enter = 0
+                        elif input_type == 'text':
+                            to_enter = " ‏‏‎ "
+                        else:
+                            to_enter = 0
+                    
+                    # Clear the field first
+                    input_field.clear()
+                    
+                    # Enter the value
+                    if to_enter is not None and str(to_enter).strip():
+                        input_field.send_keys(str(to_enter))
+                        print(f"Entered '{to_enter}' for question: {question_text}")
+                    
+                except Exception as e:
+                    print(f"Error processing input field: {str(e)}")
+                    continue
+                    
+        except Exception as e:
+            print(f"Error in handle_new_form_structure: {str(e)}")
+
     def additional_questions(self):
         #pdb.set_trace()
         frm_el = self.browser.find_elements(By.CLASS_NAME, 'jobs-easy-apply-form-section__grouping')
+        
+        # If the old structure doesn't exist, try the new structure
+        if len(frm_el) == 0:
+            print("Using new LinkedIn form structure...")
+            self.handle_new_form_structure()
+            return
+            
         if len(frm_el) > 0:
             for el in frm_el:
                 # Radio check
@@ -659,8 +743,8 @@ class LinkedinEasyApply:
                         text_field_type = 'text'
 
                     to_enter = ''
-                    if ('experience do you currently have' or 'many years of working experience do you have')in question_text:
-                        no_of_years = 0 # self.industry_default
+                    if ('experience do you currently have' in question_text or 'many years of working experience do you have' in question_text):
+                        no_of_years = self.industry_default
 
                         for industry in self.industry:
                             if industry.lower() in question_text:
@@ -668,12 +752,15 @@ class LinkedinEasyApply:
                                 break
 
                         to_enter = no_of_years
-                    elif ('many years of work experience do you have using' or 'many years of work experience do you have with') in question_text:
-                        no_of_years = 0 # self.technology_default
+                    elif ('many years of work experience do you have using' in question_text or 
+                          'many years of work experience do you have with' in question_text or
+                          'how many years of work experience do you have with' in question_text):
+                        no_of_years = self.technology_default
 
                         for technology in self.technology:
                             if technology.lower() in question_text:
                                 no_of_years = self.technology[technology]
+                                break
 
                         to_enter = no_of_years
                     elif 'grade point average' in question_text:
