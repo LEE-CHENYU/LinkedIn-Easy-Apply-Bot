@@ -14,6 +14,9 @@ formHandlingMode: "hybrid"  # Options: "hybrid", "ai-only", "hardcoded-only"
 useAIForms: true           # Enable/disable AI form handling (default: true)
 aiTimeout: 120            # AI timeout in seconds (default: 120)
 
+# Browser Display Settings
+browserZoomLevel: 0.5      # Browser zoom level (0.5 = 50%, 1.0 = 100%, 0.75 = 75%)
+
 # Enhanced Debug Mode
 debugMode: true           # Enable detailed debug logging and file saving
 ```

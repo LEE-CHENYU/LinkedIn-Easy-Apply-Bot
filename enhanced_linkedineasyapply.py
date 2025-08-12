@@ -14,6 +14,7 @@ from functools import wraps
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 from browser_use_integration import BrowserUseLinkedInBot, load_openai_api_key
 
 # Import the original LinkedinEasyApply class
@@ -37,6 +38,7 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
         self.use_ai_forms = parameters.get('useAIForms', True)
         self.form_handling_mode = parameters.get('formHandlingMode', 'hybrid')  # 'ai-only', 'hardcoded-only', 'hybrid'
         self.ai_timeout = parameters.get('aiTimeout', 120)  # AI timeout in seconds
+        self.browser_zoom_level = parameters.get('browserZoomLevel', 0.5)  # Browser zoom level (0.5 = 50%)
         self.openai_api_key = None
         self.browser_use_bot = None
         self.ai_success_count = 0
@@ -50,6 +52,9 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
             logger.warning(f"Could not load OpenAI API key: {str(e)}")
             logger.warning("AI form handling will be disabled")
             self.use_ai_forms = False
+        
+        # Apply browser zoom settings for better element visibility
+        self.apply_browser_zoom()
     
     async def initialize_ai_agent(self):
         """Initialize the AI agent for form handling"""
@@ -155,23 +160,8 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
             
             # Execute the async function
             try:
-                if loop.is_running():
-                    print("      ⚠️  Event loop already running, using create_task...")
-                    # Create a task and wait for it
-                    task = loop.create_task(_async_apply())
-                    # Use a timeout to prevent hanging
-                    return asyncio.run_coroutine_threadsafe(task, loop).result(timeout=150)
-                else:
-                    print("      ✅ Event loop available, running async operation...")
-                    return loop.run_until_complete(_async_apply())
-                    
-            except Exception as execution_error:
-                print(f"      ❌ Async execution error: {str(execution_error)}")
-                
-                # Final fallback: run in separate thread
-                print("      🔄 Trying thread-based execution as last resort...")
-                import concurrent.futures
-                import threading
+                # Always use thread-based execution for better compatibility
+                print("      🔄 Using thread-based async execution for better compatibility...")
                 
                 def run_in_new_loop():
                     # Create completely new event loop in this thread
@@ -182,6 +172,7 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                     finally:
                         new_loop.close()
                 
+                import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(run_in_new_loop)
                     try:
@@ -189,6 +180,11 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                     except concurrent.futures.TimeoutError:
                         print("      ❌ Thread execution timed out")
                         return False
+                    
+            except Exception as execution_error:
+                print(f"      ❌ Critical async execution error: {str(execution_error)}")
+                self.ai_failure_count += 1
+                return False
                         
         except Exception as e:
             self.ai_failure_count += 1
@@ -232,9 +228,13 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
         time.sleep(2 * self.sleep_multiplier)
         
         print("📱 Application modal opened")
+        
+        # Reapply zoom for the application modal
+        self.apply_browser_zoom()
 
         # Determine form handling approach based on mode
         print(f"🔧 Form handling mode: {self.form_handling_mode}")
+        print(f"🤖 AI available: {'✅ Yes' if (self.use_ai_forms and self.openai_api_key) else '❌ No'}")
         
         if self.form_handling_mode == 'hardcoded-only':
             print("🔧 Using hardcoded-only form handling...")
@@ -244,8 +244,11 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
             print("🤖 Using AI-only form handling...")
             if not self.use_ai_forms or not self.openai_api_key:
                 print("❌ AI-only mode requested but AI is not available")
+                print(f"   - use_ai_forms: {self.use_ai_forms}")
+                print(f"   - openai_api_key: {'Present' if self.openai_api_key else 'Missing'}")
                 raise Exception("AI-only mode requested but AI is not configured properly")
             
+            print("🎯 Starting AI-only application process...")
             ai_success = self.apply_to_job_with_ai(job_title, company)
             if ai_success:
                 print(f"✅ AI successfully completed application for {job_title}")
@@ -376,17 +379,25 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                     self.enhanced_fill_up()
                     print("   ✅ Enhanced fill_up completed")
                     
-                    # Use smart element finder for next button
-                    print("   🔍 Looking for next/submit button...")
-                    next_button_selectors = [
-                        (By.CLASS_NAME, "artdeco-button--primary"),
-                        (By.CSS_SELECTOR, "button[aria-label*='Continue']"),
-                        (By.CSS_SELECTOR, "button[aria-label*='Review']"),
-                        (By.CSS_SELECTOR, "button[aria-label*='Submit']"),
-                        (By.CSS_SELECTOR, "button.artdeco-button--primary")
-                    ]
+                    # Store current page state to detect changes
+                    current_url = self.browser.current_url
+                    current_page_hash = hash(self.browser.page_source[:1000])  # First 1000 chars as fingerprint
                     
-                    next_button = self.smart_find_element(next_button_selectors, timeout=10)
+                    # Use enhanced button finding logic
+                    print("   🔍 Looking for next/submit button...")
+                    next_button = self.find_next_button_advanced()
+                    
+                    if not next_button:
+                        # Fallback to original selectors
+                        print("   🔄 Fallback: Using original button selectors...")
+                        next_button_selectors = [
+                            (By.CLASS_NAME, "artdeco-button--primary"),
+                            (By.CSS_SELECTOR, "button[aria-label*='Continue']"),
+                            (By.CSS_SELECTOR, "button[aria-label*='Review']"),
+                            (By.CSS_SELECTOR, "button[aria-label*='Submit']"),
+                            (By.CSS_SELECTOR, "button.artdeco-button--primary")
+                        ]
+                        next_button = self.smart_find_element(next_button_selectors, timeout=10)
                     
                     if not next_button:
                         print("   ❌ Could not find next button using any selector")
@@ -414,7 +425,10 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                     print(f"      Is enabled: {next_button.is_enabled()}")
                     print(f"      Is displayed: {next_button.is_displayed()}")
                     
-                    if submit_application_text in button_text:
+                    # Special handling for Review button
+                    if 'review' in button_text or 'review' in button_aria.lower():
+                        print("   📋 This is the Review button - proceeding to application review")
+                    elif submit_application_text in button_text:
                         print("   🎯 This is the final submit button!")
                         try:
                             print("   📤 Attempting to unfollow company before submission...")
@@ -465,9 +479,52 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                         print(f"   ⏱️  Waiting {2 * self.sleep_multiplier}-{3 * self.sleep_multiplier}s for page to load...")
                         time.sleep(random.uniform(2, 3) * self.sleep_multiplier)
                         
-                        print("   📊 Checking new page state after button click...")
-                        print(f"      New URL: {self.browser.current_url}")
+                        # Enhanced page change detection
+                        print("   📊 Checking page state changes after button click...")
+                        new_url = self.browser.current_url
+                        new_page_hash = hash(self.browser.page_source[:1000])
+                        
+                        print(f"      URL changed: {current_url != new_url}")
+                        print(f"      Page content changed: {current_page_hash != new_page_hash}")
+                        print(f"      New URL: {new_url}")
                         print(f"      New page title: {self.browser.title}")
+                        
+                        # If neither URL nor content changed, this might indicate the button click didn't work
+                        if current_url == new_url and current_page_hash == new_page_hash:
+                            print("   ⚠️  WARNING: Page appears unchanged after button click!")
+                            print("   📊 This might indicate a stuck state or validation errors")
+                            
+                            # Special handling for Review button - it might just change content without URL change
+                            if 'review' in button_text or 'review' in button_aria.lower():
+                                print("   📋 Review button clicked - checking for review page content changes...")
+                                
+                                # Look for review page indicators
+                                review_indicators = [
+                                    "review your application",
+                                    "application review",
+                                    "submit application",
+                                    "final review",
+                                    "confirm",
+                                    "ready to submit"
+                                ]
+                                
+                                page_content_lower = self.browser.page_source.lower()
+                                review_content_found = any(indicator in page_content_lower for indicator in review_indicators)
+                                
+                                if review_content_found:
+                                    print("   ✅ Review page content detected - button click was successful")
+                                else:
+                                    print("   ⚠️  Review page content not found - trying alternative detection")
+                                    # Try to find validation errors more aggressively
+                                    self.detect_stuck_form_state()
+                            else:
+                                # Try to find validation errors more aggressively
+                                self.detect_stuck_form_state()
+                                
+                            # Check if we're specifically stuck at Review button
+                            if self.is_stuck_at_review_button():
+                                print("   🔄 Detected stuck at Review button - attempting advanced fix")
+                                self.fix_review_button_issue()
 
                     # Check for validation errors including radio button errors
                     print("   🔍 Checking for validation errors...")
@@ -870,6 +927,433 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
             
         return False
     
+    def apply_browser_zoom(self):
+        """Apply configurable zoom to browser for better element visibility"""
+        try:
+            zoom_percentage = int(self.browser_zoom_level * 100)
+            print(f"🖥️  Applying {zoom_percentage}% zoom to browser for better element visibility...")
+            
+            # Method 1: CSS zoom property
+            self.browser.execute_script(f"document.body.style.zoom='{self.browser_zoom_level}'")
+            
+            # Method 2: CSS transform scale (fallback)
+            inverse_scale = 1.0 / self.browser_zoom_level if self.browser_zoom_level > 0 else 2.0
+            self.browser.execute_script(f"""
+                if (!document.body.style.zoom || document.body.style.zoom === '') {{
+                    document.body.style.transform = 'scale({self.browser_zoom_level})';
+                    document.body.style.transformOrigin = 'top left';
+                    document.body.style.width = '{inverse_scale * 100}%';
+                    document.body.style.height = '{inverse_scale * 100}%';
+                }}
+            """)
+            
+            # Method 3: Viewport meta tag approach (for some elements)
+            self.browser.execute_script(f"""
+                var meta = document.querySelector('meta[name="viewport"]');
+                if (!meta) {{
+                    meta = document.createElement('meta');
+                    meta.name = 'viewport';
+                    document.head.appendChild(meta);
+                }}
+                meta.content = 'width=device-width, initial-scale={self.browser_zoom_level}, user-scalable=yes';
+            """)
+            
+            print(f"✅ Browser zoom ({zoom_percentage}%) applied successfully")
+            
+        except Exception as e:
+            print(f"⚠️  Warning: Could not apply browser zoom: {str(e)}")
+    
+    def find_next_button_advanced(self):
+        """Advanced button finding with specific priority for LinkedIn patterns"""
+        try:
+            print("      🎯 Using advanced button detection logic...")
+            
+            # Method 1: Look for buttons with specific LinkedIn data attributes
+            linkedin_buttons = self.browser.find_elements(By.CSS_SELECTOR, 
+                "button[data-easy-apply-next-button], button[data-live-test-easy-apply-next-button], button[data-live-test-easy-apply-review-button]")
+            
+            if linkedin_buttons:
+                for btn in linkedin_buttons:
+                    if btn.is_displayed() and btn.is_enabled():
+                        btn_text = btn.text.strip().lower()
+                        btn_aria = (btn.get_attribute('aria-label') or '').lower()
+                        print(f"      ✅ Found LinkedIn-specific button: '{btn_text}' / '{btn_aria}'")
+                        return btn
+            
+            # Method 2: Look for primary buttons in the button container div
+            button_containers = self.browser.find_elements(By.CSS_SELECTOR, 
+                "div.display-flex.justify-flex-end, div[class*='button-container'], div[class*='form-actions']")
+            
+            for container in button_containers:
+                primary_buttons = container.find_elements(By.CSS_SELECTOR, 
+                    "button.artdeco-button--primary")
+                
+                for btn in primary_buttons:
+                    if btn.is_displayed() and btn.is_enabled():
+                        btn_text = btn.text.lower().strip()
+                        btn_aria = (btn.get_attribute('aria-label') or '').lower()
+                        
+                        # Prioritize based on text/aria-label content
+                        if any(keyword in btn_text + ' ' + btn_aria for keyword in ['next', 'continue', 'review', 'submit']):
+                            print(f"      ✅ Found primary button in container: '{btn_text}' / '{btn_aria}'")
+                            return btn
+            
+            # Method 3: Look for buttons by aria-label with exact matching
+            aria_selectors = [
+                "button[aria-label='Continue to next step']",
+                "button[aria-label='Review your application']", 
+                "button[aria-label='Submit application']",
+                "button[aria-label*='Continue']",
+                "button[aria-label*='Next']",
+                "button[aria-label*='Review']"
+            ]
+            
+            for selector in aria_selectors:
+                try:
+                    buttons = self.browser.find_elements(By.CSS_SELECTOR, selector)
+                    for btn in buttons:
+                        if btn.is_displayed() and btn.is_enabled():
+                            print(f"      ✅ Found button by aria-label: {btn.get_attribute('aria-label')}")
+                            return btn
+                except:
+                    continue
+            
+            # Method 4: Last resort - look for any primary button that's not "Back"
+            primary_buttons = self.browser.find_elements(By.CSS_SELECTOR, "button.artdeco-button--primary")
+            for btn in primary_buttons:
+                if btn.is_displayed() and btn.is_enabled():
+                    btn_text = btn.text.lower().strip()
+                    btn_aria = (btn.get_attribute('aria-label') or '').lower()
+                    
+                    # Exclude back buttons
+                    if 'back' not in btn_text and 'back' not in btn_aria and 'previous' not in btn_aria:
+                        print(f"      ⚠️  Found fallback primary button: '{btn_text}' / '{btn_aria}'")
+                        return btn
+            
+            print("      ❌ No suitable next button found with advanced detection")
+            return None
+            
+        except Exception as e:
+            print(f"      ❌ Error in advanced button detection: {str(e)}")
+            return None
+    
+    def detect_stuck_form_state(self):
+        """Detect why the form might be stuck and attempt to resolve"""
+        try:
+            print("      🔍 Analyzing stuck form state...")
+            
+            # Check for validation errors that weren't caught earlier
+            error_indicators = [
+                'please make a selection',
+                'please enter a valid',
+                'this field is required',
+                'please complete this required field',
+                'invalid format',
+                'field cannot be empty'
+            ]
+            
+            page_source_lower = self.browser.page_source.lower()
+            found_errors = []
+            
+            for error in error_indicators:
+                if error in page_source_lower:
+                    count = page_source_lower.count(error)
+                    found_errors.append(f"{error} ({count} times)")
+            
+            if found_errors:
+                print(f"      ⚠️  Found potential validation errors:")
+                for error in found_errors[:5]:  # Show first 5
+                    print(f"         - {error}")
+                
+                # Try to fix these issues
+                print("      🔧 Attempting to resolve validation errors...")
+                self.emergency_form_fix()
+            else:
+                print("      ✅ No obvious validation errors found")
+                
+            # Check if the button is actually clickable
+            try:
+                next_buttons = self.browser.find_elements(By.CSS_SELECTOR, 
+                    "button.artdeco-button--primary, button[aria-label*='Continue'], button[aria-label*='Next']")
+                
+                print(f"      📊 Found {len(next_buttons)} potential next buttons:")
+                for i, btn in enumerate(next_buttons):
+                    try:
+                        is_displayed = btn.is_displayed()
+                        is_enabled = btn.is_enabled()
+                        btn_text = btn.text.strip()
+                        btn_aria = btn.get_attribute('aria-label') or ''
+                        
+                        print(f"         Button {i+1}: '{btn_text}' / '{btn_aria}' - Displayed: {is_displayed}, Enabled: {is_enabled}")
+                        
+                        if not is_enabled:
+                            print(f"         ⚠️  Button {i+1} is disabled - this might be the issue!")
+                            
+                    except Exception as btn_error:
+                        print(f"         Button {i+1}: Error analyzing - {str(btn_error)}")
+                        
+            except Exception as analysis_error:
+                print(f"      ❌ Error analyzing buttons: {str(analysis_error)}")
+                
+        except Exception as e:
+            print(f"      ❌ Error in stuck state detection: {str(e)}")
+    
+    def emergency_form_fix(self):
+        """Emergency form fixing when stuck"""
+        try:
+            print("         🚨 Running emergency form fixes...")
+            
+            # Fix 1: Try to select any unselected radio buttons
+            radio_groups = self.browser.find_elements(By.CSS_SELECTOR, "fieldset, div[role='radiogroup']")
+            fixed_radios = 0
+            
+            for group in radio_groups:
+                try:
+                    radios = group.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                    if radios:
+                        selected = [r for r in radios if r.is_selected()]
+                        if not selected:
+                            # Select the first radio button
+                            radios[0].click()
+                            fixed_radios += 1
+                            print(f"         ✅ Fixed unselected radio group ({fixed_radios})")
+                except:
+                    continue
+            
+            # Fix 2: Fill any empty required text fields with minimal values
+            required_inputs = self.browser.find_elements(By.CSS_SELECTOR, "input[required], input[aria-required='true']")
+            fixed_inputs = 0
+            
+            for input_elem in required_inputs:
+                try:
+                    if input_elem.get_attribute('type') in ['text', 'number', 'tel', 'email']:
+                        current_value = input_elem.get_attribute('value') or ''
+                        if not current_value.strip():
+                            input_type = input_elem.get_attribute('type')
+                            if input_type == 'number':
+                                input_elem.send_keys('1')
+                            elif input_type == 'email':
+                                input_elem.send_keys('email@example.com')
+                            else:
+                                input_elem.send_keys('N/A')
+                            fixed_inputs += 1
+                            print(f"         ✅ Fixed empty required field ({fixed_inputs})")
+                except:
+                    continue
+            
+            print(f"         📊 Emergency fixes applied: {fixed_radios} radio groups, {fixed_inputs} text fields")
+            
+        except Exception as e:
+            print(f"         ❌ Error in emergency form fix: {str(e)}")
+    
+    def handle_linkedin_radio_buttons(self):
+        """Handle specific LinkedIn radio button structure from the provided HTML"""
+        try:
+            print("         📋 Handling LinkedIn-specific radio button structures...")
+            
+            # Find all fieldsets with the LinkedIn radio button component
+            fieldsets = self.browser.find_elements(By.CSS_SELECTOR, 'fieldset[data-test-form-builder-radio-button-form-component]')
+            
+            fixed_count = 0
+            for fieldset in fieldsets:
+                try:
+                    # Get the legend text to understand the question
+                    legend = fieldset.find_element(By.TAG_NAME, 'legend')
+                    question_text = legend.text.strip().lower()
+                    
+                    print(f"         🎯 Processing LinkedIn radio question: '{question_text[:60]}...'")
+                    
+                    # Check if any radio button in this fieldset is already selected
+                    radio_buttons = fieldset.find_elements(By.CSS_SELECTOR, 'input[type="radio"]')
+                    selected_radios = [r for r in radio_buttons if r.is_selected()]
+                    
+                    if len(selected_radios) == 0 and len(radio_buttons) > 0:
+                        print(f"         ⚠️  No selection made - need to select appropriate option")
+                        
+                        # Get all the radio options and their labels
+                        options = []
+                        for radio in radio_buttons:
+                            try:
+                                radio_id = radio.get_attribute('id')
+                                label = self.browser.find_element(By.CSS_SELECTOR, f'label[for="{radio_id}"]')
+                                option_text = label.text.strip().lower()
+                                options.append((radio, option_text))
+                                print(f"            Option: '{option_text}'")
+                            except:
+                                continue
+                        
+                        # Smart selection based on question type
+                        selected = False
+                        
+                        # Work authorization questions
+                        if any(keyword in question_text for keyword in ['authorized', 'legally', 'work in', 'without restriction']):
+                            print("         🔐 Detected work authorization question - selecting 'Yes'")
+                            for radio, option_text in options:
+                                if 'yes' in option_text:
+                                    try:
+                                        radio.click()
+                                        selected = True
+                                        fixed_count += 1
+                                        print(f"         ✅ Selected: '{option_text}'")
+                                        break
+                                    except Exception as click_error:
+                                        print(f"         ❌ Could not click option: {str(click_error)}")
+                        
+                        # Visa sponsorship questions
+                        elif any(keyword in question_text for keyword in ['visa', 'sponsor', 'sponsorship', 'transfer']):
+                            print("         🛂 Detected visa sponsorship question - selecting 'No'")
+                            for radio, option_text in options:
+                                if 'no' in option_text:
+                                    try:
+                                        radio.click()
+                                        selected = True
+                                        fixed_count += 1
+                                        print(f"         ✅ Selected: '{option_text}'")
+                                        break
+                                    except Exception as click_error:
+                                        print(f"         ❌ Could not click option: {str(click_error)}")
+                        
+                        # Default to first option if no specific match
+                        if not selected and options:
+                            print("         🔄 No specific match - selecting first available option")
+                            try:
+                                options[0][0].click()
+                                fixed_count += 1
+                                print(f"         ✅ Selected default: '{options[0][1]}'")
+                            except Exception as click_error:
+                                print(f"         ❌ Could not click default option: {str(click_error)}")
+                    else:
+                        print(f"         ✅ Radio group already has selection ({len(selected_radios)} selected)")
+                        
+                except Exception as fieldset_error:
+                    print(f"         ❌ Error processing fieldset: {str(fieldset_error)}")
+                    continue
+            
+            print(f"         ✅ LinkedIn radio buttons processed: {fixed_count} groups fixed")
+            
+        except Exception as e:
+            print(f"         ❌ Error in LinkedIn radio button handling: {str(e)}")
+    
+    def is_stuck_at_review_button(self):
+        """Check if we're stuck at the Review button based on specific patterns"""
+        try:
+            # Look for the exact HTML pattern from the user's example
+            review_button_container = self.browser.find_elements(By.CSS_SELECTOR, "div.display-flex.justify-flex-end")
+            
+            for container in review_button_container:
+                try:
+                    # Look for both Back and Review buttons in the same container
+                    back_button = container.find_elements(By.CSS_SELECTOR, "button[aria-label*='Back']")
+                    review_button = container.find_elements(By.CSS_SELECTOR, "button[aria-label*='Review']")
+                    
+                    if back_button and review_button:
+                        # Check if the Review button has the specific attributes
+                        for review_btn in review_button:
+                            if (review_btn.get_attribute('data-live-test-easy-apply-review-button') is not None or
+                                'review' in review_btn.text.lower()):
+                                print("         🎯 Found Review button stuck pattern")
+                                return True
+                except:
+                    continue
+                    
+            return False
+            
+        except Exception as e:
+            print(f"         ❌ Error checking Review button stuck state: {str(e)}")
+            return False
+    
+    def fix_review_button_issue(self):
+        """Attempt to fix issues with Review button not advancing"""
+        try:
+            print("         🔧 Applying Review button specific fixes...")
+            
+            # Method 1: Force scroll to Review button and retry
+            review_buttons = self.browser.find_elements(By.CSS_SELECTOR, "button[aria-label*='Review']")
+            
+            for review_btn in review_buttons:
+                if review_btn.is_displayed() and review_btn.is_enabled():
+                    try:
+                        print("         📍 Scrolling to Review button...")
+                        self.browser.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", review_btn)
+                        time.sleep(1)
+                        
+                        print("         🖱️  Attempting enhanced Review button click...")
+                        
+                        # Try multiple click methods
+                        click_success = False
+                        
+                        # Method 1: Regular click
+                        try:
+                            review_btn.click()
+                            click_success = True
+                            print("         ✅ Review button clicked with regular click")
+                        except:
+                            pass
+                        
+                        # Method 2: JavaScript click
+                        if not click_success:
+                            try:
+                                self.browser.execute_script("arguments[0].click();", review_btn)
+                                click_success = True
+                                print("         ✅ Review button clicked with JavaScript")
+                            except:
+                                pass
+                        
+                        # Method 3: Mouse action
+                        if not click_success:
+                            try:
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                actions = ActionChains(self.browser)
+                                actions.move_to_element(review_btn).click().perform()
+                                click_success = True
+                                print("         ✅ Review button clicked with ActionChains")
+                            except:
+                                pass
+                        
+                        if click_success:
+                            # Wait longer for Review page to load
+                            print("         ⏳ Waiting for Review page to load...")
+                            time.sleep(3)
+                            
+                            # Check if we advanced to review page
+                            page_source = self.browser.page_source.lower()
+                            if any(indicator in page_source for indicator in ['submit application', 'final review', 'ready to submit']):
+                                print("         ✅ Successfully advanced to Review page")
+                                return True
+                            else:
+                                print("         ⚠️  Review button clicked but page didn't advance")
+                        
+                    except Exception as btn_error:
+                        print(f"         ❌ Error clicking Review button: {str(btn_error)}")
+                        continue
+            
+            # Method 2: Check for form validation issues preventing Review
+            print("         🔍 Checking for validation issues preventing Review...")
+            
+            # Look for any validation errors on the current page
+            validation_errors = self.browser.find_elements(By.CSS_SELECTOR, 
+                ".artdeco-inline-feedback--error, .error, [class*='error']")
+            
+            if validation_errors:
+                print(f"         ⚠️  Found {len(validation_errors)} validation errors")
+                for i, error in enumerate(validation_errors[:3]):  # Show first 3
+                    try:
+                        error_text = error.text.strip()
+                        if error_text:
+                            print(f"            Error {i+1}: {error_text}")
+                    except:
+                        print(f"            Error {i+1}: Could not read error text")
+                
+                # Try to fix validation errors
+                print("         🚨 Running emergency validation fixes...")
+                self.emergency_form_fix()
+                
+            return False
+            
+        except Exception as e:
+            print(f"         ❌ Error in Review button fix: {str(e)}")
+            return False
+    
     def enhanced_fill_up(self):
         """Enhanced version of fill_up with better new LinkedIn structure handling"""
         try:
@@ -882,6 +1366,9 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
             
             # Then, do additional comprehensive form handling
             print("      🔍 Performing comprehensive form analysis...")
+            
+            # Handle LinkedIn-specific radio buttons first
+            self.handle_linkedin_radio_buttons()
             
             # Handle any remaining radio button issues
             self.handle_radio_buttons_comprehensive()
@@ -909,11 +1396,15 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
             containers_old = self.browser.find_elements(By.CLASS_NAME, 'jobs-easy-apply-form-section__grouping')
             all_containers.extend(containers_old)
             
-            # Method 2: New artdeco structure
+            # Method 2: New LinkedIn fieldset structure (specific to your HTML)
+            containers_fieldset = self.browser.find_elements(By.CSS_SELECTOR, 'fieldset[data-test-form-builder-radio-button-form-component]')
+            all_containers.extend(containers_fieldset)
+            
+            # Method 3: New artdeco structure
             containers_new = self.browser.find_elements(By.CSS_SELECTOR, '.artdeco-card, fieldset, [data-test-form-element]')
             all_containers.extend(containers_new)
             
-            # Method 3: Generic form containers
+            # Method 4: Generic form containers
             containers_generic = self.browser.find_elements(By.CSS_SELECTOR, 'div[class*="form"], div[class*="question"], div[class*="group"]')
             all_containers.extend(containers_generic)
             

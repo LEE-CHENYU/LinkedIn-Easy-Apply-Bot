@@ -13,10 +13,33 @@ def init_browser():
     for option in options:
         browser_options.add_argument(option)
 
+    # Add zoom and high resolution settings for better element visibility
+    browser_options.add_argument("--window-size=1920,1080")
+    browser_options.add_argument("--force-device-scale-factor=0.5")  # 50% zoom out
+
     driver = webdriver.Chrome(options=browser_options)
 
     driver.set_window_position(0, 0)
     driver.maximize_window()
+
+    # Apply zoom settings after browser initialization
+    print("🖥️  Setting up browser with 50% zoom for better element visibility...")
+    
+    # Set zoom level to 50% (0.5) using multiple methods for compatibility
+    try:
+        driver.execute_script("document.body.style.zoom='0.5'")
+        
+        # Alternative method using CSS transform
+        driver.execute_script("""
+            document.body.style.transform = 'scale(0.5)';
+            document.body.style.transformOrigin = 'top left';
+            document.body.style.width = '200%';
+            document.body.style.height = '200%';
+        """)
+        
+        print("✅ Browser zoom set to 50% for better element visibility")
+    except Exception as e:
+        print(f"⚠️  Warning: Could not set zoom level: {str(e)}")
 
     return driver
 
