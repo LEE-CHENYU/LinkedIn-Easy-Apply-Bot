@@ -1,8 +1,8 @@
-import yaml, pdb
+import yaml, pdb, asyncio
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
-from linkedineasyapply import LinkedinEasyApply
+from enhanced_linkedineasyapply import EnhancedLinkedInEasyApply
 from validate_email import validate_email
 
 def init_browser():
@@ -118,14 +118,28 @@ def validate_yaml():
     return parameters
 
 
-if __name__ == '__main__':
+async def main():
     parameters = validate_yaml()
     browser = init_browser()
 
-    bot = LinkedinEasyApply(parameters, browser)
-    bot.login()
-    bot.security_check()
-    bot.start_applying()
+    try:
+        bot = EnhancedLinkedInEasyApply(parameters, browser)
+        print(f"🤖 AI form handling: {'Enabled' if bot.use_ai_forms else 'Disabled'}")
+        
+        bot.login()
+        bot.security_check()
+        bot.start_applying()
+        
+        # Print AI statistics
+        bot.print_ai_stats()
+        
+    finally:
+        # Clean up AI resources
+        await bot.cleanup()
+        browser.quit()
+
+if __name__ == '__main__':
+    asyncio.run(main())
 
 
 
