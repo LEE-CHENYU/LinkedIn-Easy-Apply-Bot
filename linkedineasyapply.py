@@ -1,4 +1,4 @@
-import time, random, csv, pyautogui, pdb, traceback, sys, re
+import time, random, csv, pyautogui, pdb, traceback, sys, re, os
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
@@ -38,6 +38,21 @@ class LinkedinEasyApply:
         self.eeo = parameters.get('eeo', [])
         self.technology_default = self.technology['default']
         self.industry_default = self.industry['default']
+        
+        # Create main debug folder structure
+        self.main_debug_dir = "debug"
+        if not os.path.exists(self.main_debug_dir):
+            os.makedirs(self.main_debug_dir)
+        
+        # Create run-specific folder within main debug folder
+        self.run_timestamp = time.strftime("%Y%m%d_%H%M%S")
+        self.main_debug_folder = os.path.join(self.main_debug_dir, f"run_{self.run_timestamp}")
+        if not os.path.exists(self.main_debug_folder):
+            os.makedirs(self.main_debug_folder)
+        print(f"Created debug folder for this run: {self.main_debug_folder}")
+        
+        # Counter for failed applications in this run
+        self.failed_application_count = 0
 
 
     def login(self):
@@ -354,7 +369,7 @@ class LinkedinEasyApply:
                         print(f'Job description contains blacklisted text. {match_result}')
                     else:
                         try:
-                            done_applying = self.apply_to_job()
+                            done_applying = self.apply_to_job(job_title, company)
                             if done_applying:
                                 print("Done applying to the job!")
                             else:
@@ -385,7 +400,31 @@ class LinkedinEasyApply:
                 print("Job contains blacklisted keyword or company name!")
             self.seen_jobs += link
 
-    def apply_to_job(self):
+    def create_debug_folder(self, job_title, company):
+        """Create a debug subfolder for the failed job application within the main run folder"""
+        # Increment the failed application counter
+        self.failed_application_count += 1
+        
+        # Clean up job title and company for folder name
+        safe_job_title = re.sub(r'[<>:"/\\|?*\n\r]', '_', job_title.strip())[:50]
+        safe_company = re.sub(r'[<>:"/\\|?*\n\r]', '_', company.strip())[:30]
+        
+        # Create subfolder name with counter and timestamp
+        app_timestamp = time.strftime("%H%M%S")
+        subfolder_name = f"{self.failed_application_count:02d}_{safe_company}_{safe_job_title}_{app_timestamp}"
+        
+        # Create the full path within the main debug folder
+        full_folder_path = os.path.join(self.main_debug_folder, subfolder_name)
+        
+        # Create the subfolder
+        if not os.path.exists(full_folder_path):
+            os.makedirs(full_folder_path)
+        
+        return full_folder_path
+
+    def apply_to_job(self, job_title="Unknown", company="Unknown"):
+        # Create debug folder for this application attempt
+        debug_folder = None
         easy_apply_button = None
 
         try:
@@ -411,7 +450,23 @@ class LinkedinEasyApply:
             pass
 
         print("Applying to the job....")
+        
+        # Create debug folder only when we start applying (to avoid creating empty folders)
+        debug_folder = self.create_debug_folder(job_title, company)
+        print(f"Created debug folder: {debug_folder}")
+        
+        # Save page source before clicking Easy Apply
+        with open(f'{debug_folder}/application_start.html', 'w', encoding='utf-8') as f:
+            f.write(self.browser.page_source)
+        print(f"Saved initial application page to {debug_folder}/application_start.html")
+        
         easy_apply_button.click()
+        
+        # Wait for modal to appear and save it
+        time.sleep(3)
+        with open(f'{debug_folder}/application_modal.html', 'w', encoding='utf-8') as f:
+            f.write(self.browser.page_source)
+        print(f"Saved application modal page to {debug_folder}/application_modal.html")
 
         button_text = ""
         submit_application_text = 'submit application'
@@ -434,6 +489,11 @@ class LinkedinEasyApply:
                     if 'please enter a valid answer' in self.browser.page_source.lower() or 'file is required' in self.browser.page_source.lower():
                         retries -= 1
                         print("Retrying application, attempts left: " + str(retries))
+                        # Save page source when retry is needed
+                        retry_count = 3 - retries
+                        with open(f'{debug_folder}/failed_application_retry_{retry_count}.html', 'w', encoding='utf-8') as f:
+                            f.write(self.browser.page_source)
+                        print(f"Saved page source to {debug_folder}/failed_application_retry_{retry_count}.html")
 
                     else:
                         break
@@ -441,11 +501,20 @@ class LinkedinEasyApply:
                     traceback.print_exc()
                     raise Exception("Failed to apply to job!")
             if retries == 0:
+                print("All retries exhausted, saving final failed page")
+                # Save the final failed page
+                with open(f'{debug_folder}/failed_application_final.html', 'w', encoding='utf-8') as f:
+                    f.write(self.browser.page_source)
+                print(f"Saved final failed page to {debug_folder}/failed_application_final.html")
+                
                 traceback.print_exc()
-                self.browser.find_element(By.CLASS_NAME, 'artdeco-modal__dismiss').click()
-                time.sleep(random.uniform(3, 5))
-                self.browser.find_elements(By.CLASS_NAME, 'artdeco-modal__confirm-dialog-btn')[1].click()
-                time.sleep(random.uniform(3, 5))
+                try:
+                    self.browser.find_element(By.CLASS_NAME, 'artdeco-modal__dismiss').click()
+                    time.sleep(random.uniform(3, 5))
+                    self.browser.find_elements(By.CLASS_NAME, 'artdeco-modal__confirm-dialog-btn')[1].click()
+                    time.sleep(random.uniform(3, 5))
+                except Exception as e:
+                    print(f"Error closing modal: {str(e)}")
                 raise Exception("Failed to apply to job!")
 
         closed_notification = False
