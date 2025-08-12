@@ -324,18 +324,31 @@ class LinkedinEasyApply:
                     time.sleep(random.uniform(3, 5))
                     
                     
+                    # Initialize inner_description with empty string
+                    inner_description: str = ""
                     try:
-                        inner_description: str = self.browser.find_element(By.CLASS_NAME, 'jobs-description-content__text').text
+                        # Try multiple selectors for job description
+                        try:
+                            inner_description = self.browser.find_element(By.CLASS_NAME, 'jobs-description-content__text').text
+                        except:
+                            try:
+                                inner_description = self.browser.find_element(By.CLASS_NAME, 'jobs-description__content').text
+                            except:
+                                try:
+                                    inner_description = self.browser.find_element(By.CSS_SELECTOR, '[class*="jobs-description"]').text
+                                except:
+                                    print("Could not find job description")
                     except:
                         pass
                                         
                     contains_blacklisted_description_text: bool = False
-                    for sentence in self.blacklistDescriptionRegex:
-                        match_result = re.search(sentence, inner_description, re.I)
-                        is_in_description: bool = match_result is not None
-                        if is_in_description:
-                            contains_blacklisted_description_text = True
-                            break
+                    if inner_description:  # Only check if we found a description
+                        for sentence in self.blacklistDescriptionRegex:
+                            match_result = re.search(sentence, inner_description, re.I)
+                            is_in_description: bool = match_result is not None
+                            if is_in_description:
+                                contains_blacklisted_description_text = True
+                                break
 
                     if contains_blacklisted_description_text:
                         print(f'Job description contains blacklisted text. {match_result}')

@@ -71,12 +71,12 @@ titleBlacklist:
 # regular expressions is a match.
 #**************************************************
 blacklistDescriptionRegex:
- - '[2-9]\+? years?'
- - '[2-9][0-9]+\+? years'
- - '(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
- - '[2-9]\+? 年?'
- - '[2-9][0-9]+\+? 年'
- - '以上工作经验'
+ - '[3-9]\+? years?'
+ - '[3-9][0-9]*\+? years'
+ - '(three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
+ - '[3-9]\+? 年?'
+ - '[3-9][0-9]*\+? 年'
+ - '3年以上工作经验'
  - '(Local|local) dipoloma'
  - 'Residence'
  - 'live in'
