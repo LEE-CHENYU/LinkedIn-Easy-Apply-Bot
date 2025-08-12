@@ -232,6 +232,10 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
         time.sleep(2 * self.sleep_multiplier)
         
         print("📱 Application modal opened")
+        
+        # Ensure optimal viewport for form processing
+        print("🔧 Optimizing browser viewport for form visibility...")
+        self.ensure_optimal_viewport()
 
         # Determine form handling approach based on mode
         print(f"🔧 Form handling mode: {self.form_handling_mode}")
@@ -308,12 +312,56 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
         submit_application_text = 'submit application'
         form_step_count = 0
         
+        # Track page changes to detect if stuck
+        previous_url = ""
+        same_page_count = 0
+        max_same_page_retries = 3
+        
         print(f"🔧 Beginning form processing loop (max steps: {self.max_form_steps})")
+        
+        # Ensure viewport is optimized before starting form processing
+        self.ensure_optimal_viewport()
         
         while submit_application_text not in button_text.lower() and form_step_count < self.max_form_steps:
             form_step_count += 1
+            current_url = self.browser.current_url
+            
             print(f"📝 Processing form step {form_step_count}/{self.max_form_steps}")
-            print(f"   📊 Current URL: {self.browser.current_url}")
+            print(f"   📊 Current URL: {current_url}")
+            
+            # Check if we're stuck on the same page
+            if current_url == previous_url:
+                same_page_count += 1
+                print(f"   ⚠️  Same page detected ({same_page_count}/{max_same_page_retries} times)")
+                
+                if same_page_count >= max_same_page_retries:
+                    print(f"   💥 STUCK DETECTION: Been on same page {same_page_count} times!")
+                    print(f"      URL: {current_url}")
+                    print(f"      This usually means button clicking isn't working or validation errors persist")
+                    
+                    # Try to find and analyze the current state
+                    try:
+                        # Check if there are validation errors
+                        page_source = self.browser.page_source.lower()
+                        if 'please make a selection' in page_source:
+                            print(f"      🎯 CAUSE: Radio button validation errors detected")
+                            print(f"      🔧 SOLUTION: Running emergency radio button fix...")
+                            self.fix_unselected_radio_buttons()
+                        elif 'please enter a valid answer' in page_source:
+                            print(f"      🎯 CAUSE: Text field validation errors detected")
+                        elif 'file is required' in page_source:
+                            print(f"      🎯 CAUSE: File upload requirements detected")
+                        else:
+                            print(f"      🎯 CAUSE: Unknown - no obvious validation errors")
+                    except:
+                        print(f"      ❌ Could not analyze stuck cause")
+                    
+                    # Break out of the stuck loop
+                    print(f"      🚨 Aborting to prevent infinite loop")
+                    break
+            else:
+                same_page_count = 0  # Reset counter when page changes
+                previous_url = current_url
             
             # Detailed page content analysis
             page_source = self.browser.page_source.lower()
@@ -379,14 +427,88 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                     # Use smart element finder for next button
                     print("   🔍 Looking for next/submit button...")
                     next_button_selectors = [
-                        (By.CLASS_NAME, "artdeco-button--primary"),
-                        (By.CSS_SELECTOR, "button[aria-label*='Continue']"),
-                        (By.CSS_SELECTOR, "button[aria-label*='Review']"),
+                        # Priority selectors - most specific first
+                        (By.CSS_SELECTOR, "button[data-easy-apply-next-button]"),  # LinkedIn's specific next button
+                        (By.CSS_SELECTOR, "button[aria-label='Continue to next step']"),
+                        (By.CSS_SELECTOR, "button[aria-label='Review your application']"),
                         (By.CSS_SELECTOR, "button[aria-label*='Submit']"),
-                        (By.CSS_SELECTOR, "button.artdeco-button--primary")
+                        # Generic selectors with exclusions
+                        (By.CSS_SELECTOR, "button.artdeco-button--primary:not([aria-label*='Back'])"),
+                        (By.CSS_SELECTOR, "button[aria-label*='Continue']:not([aria-label*='Back'])"),
+                        (By.CSS_SELECTOR, "button[aria-label*='Review']:not([aria-label*='Back'])"),
+                        (By.CSS_SELECTOR, "button.artdeco-button--primary"),
                     ]
                     
-                    next_button = self.smart_find_element(next_button_selectors, timeout=10)
+                    # First try to find the next button with improved logic
+                    next_button = None
+                    for selector_by, selector_value in next_button_selectors:
+                        try:
+                            buttons = self.browser.find_elements(selector_by, selector_value)
+                            if buttons:
+                                # Filter out back buttons and select the best candidate
+                                valid_buttons = []
+                                for btn in buttons:
+                                    aria_label = btn.get_attribute('aria-label') or ""
+                                    button_text = btn.text.lower()
+                                    
+                                    # Skip back buttons
+                                    if ('back' in aria_label.lower() or 'back' in button_text):
+                                        continue
+                                        
+                                    # Prioritize buttons with next/continue/submit keywords
+                                    if any(keyword in aria_label.lower() or keyword in button_text 
+                                           for keyword in ['next', 'continue', 'submit', 'review']):
+                                        valid_buttons.append((btn, 2))  # High priority
+                                    elif 'artdeco-button--primary' in btn.get_attribute('class'):
+                                        valid_buttons.append((btn, 1))  # Medium priority
+                                    else:
+                                        valid_buttons.append((btn, 0))  # Low priority
+                                
+                                if valid_buttons:
+                                    # Sort by priority and take the highest
+                                    valid_buttons.sort(key=lambda x: x[1], reverse=True)
+                                    next_button = valid_buttons[0][0]
+                                    print(f"   ✅ Found button using selector: {selector_value}")
+                                    break
+                        except:
+                            continue
+                    
+                    # Fallback: manual button analysis if smart selection fails
+                    if not next_button:
+                        print("   🔍 Smart selection failed, trying specific container pattern...")
+                        
+                        # Look for the specific container pattern you mentioned
+                        try:
+                            container = self.browser.find_element(By.CSS_SELECTOR, "div.display-flex.justify-flex-end.ph5.pv4")
+                            if container:
+                                print("   ✅ Found LinkedIn button container")
+                                buttons_in_container = container.find_elements(By.CSS_SELECTOR, "button")
+                                
+                                for btn in buttons_in_container:
+                                    aria_label = btn.get_attribute('aria-label') or ""
+                                    button_text = btn.text.strip().lower()
+                                    
+                                    print(f"      Container button: '{button_text}' | aria: '{aria_label}'")
+                                    
+                                    # Select the Next/Continue button, not the Back button
+                                    if ('continue to next step' in aria_label.lower() or 
+                                        'next' in button_text or
+                                        'continue' in button_text or
+                                        'artdeco-button--primary' in btn.get_attribute('class')):
+                                        
+                                        # Make sure it's not a back button
+                                        if not ('back' in aria_label.lower() or 'back' in button_text):
+                                            next_button = btn
+                                            print(f"   ✅ Selected button from container: '{button_text}'")
+                                            break
+                        except:
+                            print("   ⚠️  Container pattern not found")
+                        
+                        # Final fallback: comprehensive button analysis
+                        if not next_button:
+                            print("   🔍 Container selection failed, analyzing all buttons...")
+                            all_buttons = self.browser.find_elements(By.CSS_SELECTOR, "button")
+                            next_button = self.analyze_and_select_best_button(all_buttons)
                     
                     if not next_button:
                         print("   ❌ Could not find next button using any selector")
@@ -1228,6 +1350,121 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
         except Exception as e:
             print(f"            ❌ Intelligent radio selection error: {str(e)}")
             return False
+    
+    def analyze_and_select_best_button(self, all_buttons):
+        """Analyze all buttons and select the best next/continue button"""
+        try:
+            print(f"      📊 Analyzing {len(all_buttons)} buttons on the page...")
+            
+            button_candidates = []
+            
+            for i, btn in enumerate(all_buttons):
+                try:
+                    # Get button properties
+                    aria_label = btn.get_attribute('aria-label') or ""
+                    button_text = btn.text.strip().lower()
+                    button_classes = btn.get_attribute('class') or ""
+                    button_id = btn.get_attribute('id') or ""
+                    data_attrs = {attr: btn.get_attribute(attr) for attr in ['data-easy-apply-next-button', 'data-live-test-easy-apply-next-button'] if btn.get_attribute(attr)}
+                    
+                    # Skip if button is not visible or not enabled
+                    if not btn.is_displayed() or not btn.is_enabled():
+                        continue
+                    
+                    # Calculate button score
+                    score = 0
+                    reasons = []
+                    
+                    # Highest priority: LinkedIn-specific attributes
+                    if data_attrs:
+                        score += 10
+                        reasons.append("LinkedIn-specific data attribute")
+                    
+                    # High priority: Explicit next/continue/submit/review in aria-label
+                    if any(keyword in aria_label.lower() for keyword in ['continue to next step', 'review your application', 'submit application']):
+                        score += 8
+                        reasons.append("Explicit next action in aria-label")
+                    elif any(keyword in aria_label.lower() for keyword in ['continue', 'next', 'submit', 'review']):
+                        score += 6
+                        reasons.append("Action keyword in aria-label")
+                    
+                    # Medium priority: Action words in button text
+                    if any(keyword in button_text for keyword in ['continue', 'next', 'submit', 'review']):
+                        score += 4
+                        reasons.append("Action keyword in button text")
+                    
+                    # Medium priority: Primary button styling
+                    if 'artdeco-button--primary' in button_classes:
+                        score += 3
+                        reasons.append("Primary button styling")
+                    
+                    # Penalty: Back buttons (should be avoided)
+                    if any(keyword in aria_label.lower() or keyword in button_text for keyword in ['back', 'previous']):
+                        score -= 5
+                        reasons.append("PENALTY: Back/Previous button")
+                    
+                    # Bonus: Position-based (later buttons in DOM usually progress forward)
+                    if i > len(all_buttons) / 2:
+                        score += 1
+                        reasons.append("Later in DOM order")
+                    
+                    if score > 0:  # Only consider buttons with positive scores
+                        button_candidates.append({
+                            'button': btn,
+                            'score': score,
+                            'text': button_text,
+                            'aria_label': aria_label,
+                            'reasons': reasons,
+                            'index': i
+                        })
+                        
+                        print(f"      Button {i+1}: '{button_text}' | aria: '{aria_label}' | score: {score} | reasons: {', '.join(reasons)}")
+                
+                except Exception as btn_error:
+                    continue
+            
+            # Select the best candidate
+            if button_candidates:
+                # Sort by score, highest first
+                button_candidates.sort(key=lambda x: x['score'], reverse=True)
+                best_button = button_candidates[0]
+                
+                print(f"      ✅ Selected best button: '{best_button['text']}' (score: {best_button['score']})")
+                print(f"         Reasons: {', '.join(best_button['reasons'])}")
+                
+                return best_button['button']
+            else:
+                print("      ❌ No suitable buttons found after analysis")
+                return None
+                
+        except Exception as e:
+            print(f"      ❌ Error in button analysis: {str(e)}")
+            return None
+    
+    def ensure_optimal_viewport(self):
+        """Ensure browser viewport is optimized for form visibility"""
+        try:
+            # Get current window size
+            current_size = self.browser.get_window_size()
+            print(f"      📱 Current window size: {current_size['width']}x{current_size['height']}")
+            
+            # Ensure minimum size for form visibility
+            if current_size['width'] < 1920 or current_size['height'] < 1080:
+                print("      📱 Adjusting window size for better form visibility...")
+                self.browser.set_window_size(1920, 1080)
+                self.browser.maximize_window()
+            
+            # Ensure zoom level is set for maximum form visibility
+            current_zoom = self.browser.execute_script("return document.body.style.zoom || '1'")
+            if current_zoom != '0.8':
+                print("      🔍 Setting zoom level to 80% for better element visibility...")
+                self.browser.execute_script("document.body.style.zoom='0.8'")
+            
+            # Scroll to top to ensure form elements are visible
+            self.browser.execute_script("window.scrollTo(0, 0);")
+            
+        except Exception as e:
+            print(f"      ⚠️  Could not optimize viewport: {str(e)}")
     
     def print_ai_stats(self):
         """Print AI application statistics"""

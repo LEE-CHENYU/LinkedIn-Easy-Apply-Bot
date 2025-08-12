@@ -13,10 +13,23 @@ def init_browser():
     for option in options:
         browser_options.add_argument(option)
 
+    # HIGH RESOLUTION AND ZOOM SETTINGS
+    browser_options.add_argument("--window-size=1920,1080")  # Set large window size
+    browser_options.add_argument("--force-device-scale-factor=0.8")  # Zoom out to 80%
+    browser_options.add_argument("--high-dpi-support=1")     # Better DPI support
+    browser_options.add_argument("--device-scale-factor=0.8") # Additional zoom out
+
     driver = webdriver.Chrome(options=browser_options)
 
+    # Set high resolution window
+    driver.set_window_size(1920, 1080)
     driver.set_window_position(0, 0)
     driver.maximize_window()
+    
+    # Additional zoom out via JavaScript
+    driver.execute_script("document.body.style.zoom='0.8'")
+    
+    print("✅ Chrome driver initialized with high resolution (1920x1080) and 80% zoom")
 
     return driver
 

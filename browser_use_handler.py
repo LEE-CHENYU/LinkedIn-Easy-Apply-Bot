@@ -100,16 +100,45 @@ LANGUAGES:
 {self.languages}
 
 IMPORTANT RULES:
-1. For "years of experience" questions, match the technology/skill mentioned in the question to the values above
-2. For yes/no questions, use the work authorization values above
-3. For dropdown selections, choose the most appropriate option based on the context
-4. For text fields without specific matches, use reasonable defaults or leave professionally formatted spaces
-5. For file uploads, skip them (they should be handled separately)
-6. For EEO questions (gender, race, veteran status), select "Prefer not to answer" or "Decline to answer" if available
-7. Always click "Continue" or "Next" buttons to proceed through the form
-8. If you encounter "Submit Application", only click it if all required fields are properly filled
+1. FIELD VALIDATION FIRST: Before filling any field, check if it already has correct content. If the existing information is accurate and complete, skip that field and move to the next one.
 
-Please fill out this LinkedIn job application form step by step, following these instructions carefully.
+2. ONLY FILL REQUESTED INFORMATION: You only need to input information that is explicitly asked for in the form. Don't add extra or unnecessary information to fields.
+
+3. INTELLIGENT GUESSING: If you cannot find a specific answer for a question in the provided information above, make the most plausible and professional guess based on:
+   - The job requirements and industry standards
+   - Common professional expectations
+   - Conservative, safe choices that won't disqualify the application
+
+4. For "years of experience" questions, match the technology/skill mentioned in the question to the values above
+
+5. For yes/no questions, use the work authorization values above
+
+6. For dropdown selections, choose the most appropriate option based on the context
+
+7. For text fields without specific matches, use reasonable defaults or leave professionally formatted spaces
+
+8. For file uploads, skip them (they should be handled separately)
+
+9. For EEO questions (gender, race, veteran status), select "Prefer not to answer" or "Decline to answer" if available
+
+10. Always click "Continue" or "Next" buttons to proceed through the form
+
+11. If you encounter "Submit Application", only click it if all required fields are properly filled
+
+EXAMPLES OF INTELLIGENT GUESSING:
+- If asked about experience with an unlisted technology: Use the 'default' value or estimate based on similar technologies
+- If asked about salary expectations: Choose "Competitive" or mid-range options
+- If asked about availability: Choose reasonable timeframes like "2 weeks notice" or "Immediately" based on urgentFill setting
+- If asked about certifications you don't have: Select "No" or "Not applicable"
+- If asked about specific company knowledge: Provide brief, positive, professional responses
+
+RADIO BUTTON PRIORITY:
+For radio button questions, always ensure you select an option. Never leave radio button groups unselected as this will cause form validation errors. If uncertain about the best choice, prioritize:
+1. Professional/positive responses that don't disqualify you
+2. Conservative answers that demonstrate responsibility
+3. "Yes" for capability questions, "No" for barrier questions
+
+Please fill out this LinkedIn job application form step by step, following these instructions carefully. Pay special attention to radio button selections to avoid validation errors.
 """
         
         return instructions.strip()
