@@ -95,7 +95,7 @@ checkboxes:
  driversLicence: True
  # Will you now, or in the future, require sponsorship for employment visa status (e.g. H-1B visa status)? (yes/no checkbox)
  # This is relative to the location and your citizenship applying above, and same with legallyAuthorized.
- requireVisa: False
+ requireVisa: True
  # Are you legally authorized to work in COUNTRY? (yes/no checkbox)
  legallyAuthorized: True
  # We must fill this position urgently. Can you start immediately? (yes/no checkbox)

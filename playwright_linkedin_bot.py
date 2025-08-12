@@ -422,6 +422,58 @@ class PlaywrightLinkedInBot:
             logger.warning("❌ Non-AI modes not implemented in this version")
             return False
     
+    async def handle_application_success(self) -> bool:
+        """Handle success modal after application submission"""
+        try:
+            logger.info("🔄 Handling application success modal...")
+            
+            # Try to close modal with various selectors
+            dismiss_selectors = [
+                "[aria-label='Dismiss']",
+                "[aria-label*='Dismiss']",
+                "button:has-text('Done')",
+                "button:has-text('Close')",
+                "[data-test-modal-close-btn]",
+                ".artdeco-modal__dismiss",
+                ".artdeco-modal__dismiss-icon",
+                "button[aria-label*='Close']",
+                "svg[aria-label='Dismiss']"
+            ]
+            
+            for selector in dismiss_selectors:
+                try:
+                    # Look for the dismiss button
+                    button = await self.page.query_selector(selector)
+                    if button:
+                        is_visible = await button.is_visible()
+                        if is_visible:
+                            logger.info(f"📍 Found dismiss button: {selector}")
+                            await button.click()
+                            logger.info("✅ Clicked dismiss button")
+                            await asyncio.sleep(2)
+                            return True
+                except Exception as e:
+                    logger.debug(f"Couldn't click {selector}: {str(e)}")
+                    continue
+            
+            # If no button found, try pressing Escape
+            logger.info("⌨️ No dismiss button found, pressing Escape")
+            await self.page.keyboard.press("Escape")
+            await asyncio.sleep(1)
+            
+            # Also try clicking outside the modal
+            try:
+                await self.page.click("body", position={"x": 10, "y": 10})
+                logger.info("🖱️ Clicked outside modal")
+            except:
+                pass
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error handling success modal: {str(e)}")
+            return False
+    
     async def apply_with_ai(self, job_title: str, company: str) -> bool:
         """Apply to job using AI form handling"""
         
@@ -437,7 +489,7 @@ class PlaywrightLinkedInBot:
             
             # Create LLM instance
             llm = ChatOpenAI(
-                model="gpt-4o",
+                model="gpt-5-mini",
                 api_key=self.openai_api_key
             )
             
@@ -470,6 +522,10 @@ class PlaywrightLinkedInBot:
                 if any(indicator in page_content.lower() for indicator in success_indicators):
                     self.ai_success_count += 1
                     logger.info("✅ AI successfully completed application")
+                    
+                    # Handle success modal
+                    await self.handle_application_success()
+                    
                     return True
                 else:
                     self.ai_failure_count += 1
