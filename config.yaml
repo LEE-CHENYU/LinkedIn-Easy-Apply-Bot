@@ -55,7 +55,6 @@ titleBlacklist:
  - Support
  - Client
  - Customer
- - Service
  - Relationship
  - Representatitive
  - Receptionist
@@ -71,15 +70,15 @@ titleBlacklist:
 # regular expressions is a match.
 #**************************************************
 blacklistDescriptionRegex:
- - '[3-9]\+? years?'
- - '[3-9][0-9]*\+? years'
- - '(three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
- - '[3-9]\+? 年?'
- - '[3-9][0-9]*\+? 年'
- - '3年以上工作经验'
- - '(Local|local) dipoloma'
- - 'Residence'
- - 'live in'
+#  - '[3-9]\+? years?'
+#  - '[3-9][0-9]*\+? years'
+#  - '(three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
+#  - '[3-9]\+? 年?'
+#  - '[3-9][0-9]*\+? 年'
+#  - '3年以上工作经验'
+#  - '(Local|local) dipoloma'
+#  - 'Residence'
+#  - 'live in'
 
 uploads:
  resume: /Users/lichenyu/py/linkedin_bot/resume.pdf
