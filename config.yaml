@@ -8,7 +8,7 @@ remote: False
 experienceLevel:
  internship: False
  entry: True
- associate: False
+ associate: True
  mid-senior level: False
  director: False
  executive: False
@@ -16,7 +16,7 @@ experienceLevel:
 jobTypes:
  full-time: True
  contract: False
- part-time: False
+ part-time: True
  temporary: False
  internship: False
  other: False
@@ -29,32 +29,15 @@ date:
  24 hours: False
  
 positions:
-#  - Credit
-#  - Wealth Management
-#  - Analysis
- - Invest
- - Web3
- - Data
- - Analyst
- - geo
- - energy
-#  - Economics
-#  - Japanese
- #- ...
+ - Product Manager
 locations:
- - New York
- - Los Angeles
- - Chicago
- - Boston
- - Seattle
  - San Francisco
+ - San Jose
+ - New York
+ - Seattle
+ - Boston
  - Washington
-#  - HongKong
-#  - Shanghai
-#  - Tokyo
-#  - Singapore
-#  - Vietnam
-distance: 25
+distance: 100
 
 outputFileDirectory: /Users/lichenyu/py/linkedin_bot/
 
@@ -88,11 +71,11 @@ titleBlacklist:
 # regular expressions is a match.
 #**************************************************
 blacklistDescriptionRegex:
- - '[1-9]\+? years?'
- - '[1-2][0-9]+\+? years'
- - '(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
- - '[1-9]\+? 年?'
- - '[1-2][0-9]+\+? 年'
+ - '[2-9]\+? years?'
+ - '[2-9][0-9]+\+? years'
+ - '(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) years?'
+ - '[2-9]\+? 年?'
+ - '[2-9][0-9]+\+? 年'
  - '以上工作经验'
  - '(Local|local) dipoloma'
  - 'Residence'
@@ -156,19 +139,19 @@ industry:
  Customer Service: 0
  Distribution Design: 0
  Education: 0
- Engineering: 0
+ Engineering: 1
  Finance: 1
  General Business: 0
  Health Care Provider: 0
  Human Resources: 0
- Information Technology: 0
+ Information Technology: 2
  Legal: 0
  Management: 0
  Manufacturing: 0
  Marketing: 0
  Public Relations: 0
  Purchasing: 0
- Product Management: 0
+ Product Management: 1
  Project Management: 0
  Production: 0
  Quality Assurance: 0
@@ -181,9 +164,6 @@ industry:
  Writing/Editing: 0
  # end normal ones
  # put your custom ones here
- Merchandising: 0
- Advertising: 0
- Wholesale: 0
  # default to put for any skill that you did not list
  default: 1
  # end custom ones
@@ -192,7 +172,7 @@ industry:
 # ------------ Additional parameters: years of technology experience ---------------
 # How many years of work experience do you have using TECHNOLOGY? (whole numbers only)
 technology:
- python: 1
+ python: 5
  #selenium: 0
  # default to put for any skill that you did not list
  default: 1
