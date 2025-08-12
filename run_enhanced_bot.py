@@ -22,10 +22,9 @@ def setup_chrome_driver():
     chrome_options.add_experimental_option('useAutomationExtension', False)
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
-    # Set high resolution and zoom settings for better element visibility
+    # Set high resolution settings
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--start-maximized")
-    chrome_options.add_argument("--force-device-scale-factor=0.5")  # 50% zoom out
     
     # Uncomment the next line if you want to run in headless mode
     # chrome_options.add_argument("--headless")
@@ -34,21 +33,7 @@ def setup_chrome_driver():
         driver = webdriver.Chrome(options=chrome_options)
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
-        # Additional zoom configuration after driver initialization
-        print("🖥️  Setting up browser with 50% zoom for better element visibility...")
-        
-        # Set zoom level to 50% (0.5)
-        driver.execute_script("document.body.style.zoom='0.5'")
-        
-        # Alternative method using CSS transform (fallback)
-        driver.execute_script("""
-            document.body.style.transform = 'scale(0.5)';
-            document.body.style.transformOrigin = 'top left';
-            document.body.style.width = '200%';
-            document.body.style.height = '200%';
-        """)
-        
-        print("✅ Chrome WebDriver initialized successfully with 50% zoom")
+        print("✅ Chrome WebDriver initialized successfully")
         return driver
     except Exception as e:
         print(f"❌ Error setting up Chrome driver: {str(e)}")

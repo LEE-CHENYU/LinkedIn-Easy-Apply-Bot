@@ -34,11 +34,10 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
         """Initialize enhanced bot with browser-use capabilities"""
         super().__init__(parameters, driver)
         
-        # Initialize browser-use components
-        self.use_ai_forms = parameters.get('useAIForms', True)
-        self.form_handling_mode = parameters.get('formHandlingMode', 'hybrid')  # 'ai-only', 'hardcoded-only', 'hybrid'
+        # Initialize browser-use components (AI-only mode)
+        self.use_ai_forms = parameters.get('useAIForms', True)  # AI enabled
+        self.form_handling_mode = parameters.get('formHandlingMode', 'ai-only')  # AI-only mode
         self.ai_timeout = parameters.get('aiTimeout', 120)  # AI timeout in seconds
-        self.browser_zoom_level = parameters.get('browserZoomLevel', 0.5)  # Browser zoom level (0.5 = 50%)
         self.openai_api_key = None
         self.browser_use_bot = None
         self.ai_success_count = 0
@@ -52,9 +51,6 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
             logger.warning(f"Could not load OpenAI API key: {str(e)}")
             logger.warning("AI form handling will be disabled")
             self.use_ai_forms = False
-        
-        # Apply browser zoom settings for better element visibility
-        self.apply_browser_zoom()
     
     async def initialize_ai_agent(self):
         """Initialize the AI agent for form handling"""
@@ -228,9 +224,6 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
         time.sleep(2 * self.sleep_multiplier)
         
         print("📱 Application modal opened")
-        
-        # Reapply zoom for the application modal
-        self.apply_browser_zoom()
 
         # Determine form handling approach based on mode
         print(f"🔧 Form handling mode: {self.form_handling_mode}")
@@ -439,6 +432,10 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                     
                     print(f"   ⏱️  Waiting {1 * self.sleep_multiplier}-{1.5 * self.sleep_multiplier}s before clicking...")
                     time.sleep(random.uniform(1, 1.5) * self.sleep_multiplier)
+                    
+                    # Ensure button is visible and scrolled into view before clicking
+                    print("   📍 Ensuring button is visible before clicking...")
+                    self.scroll_to_element(next_button)
                     
                     # Try clicking the button with multiple methods
                     print("   🖱️  Attempting to click button...")
@@ -927,46 +924,14 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
             
         return False
     
-    def apply_browser_zoom(self):
-        """Apply configurable zoom to browser for better element visibility"""
-        try:
-            zoom_percentage = int(self.browser_zoom_level * 100)
-            print(f"🖥️  Applying {zoom_percentage}% zoom to browser for better element visibility...")
-            
-            # Method 1: CSS zoom property
-            self.browser.execute_script(f"document.body.style.zoom='{self.browser_zoom_level}'")
-            
-            # Method 2: CSS transform scale (fallback)
-            inverse_scale = 1.0 / self.browser_zoom_level if self.browser_zoom_level > 0 else 2.0
-            self.browser.execute_script(f"""
-                if (!document.body.style.zoom || document.body.style.zoom === '') {{
-                    document.body.style.transform = 'scale({self.browser_zoom_level})';
-                    document.body.style.transformOrigin = 'top left';
-                    document.body.style.width = '{inverse_scale * 100}%';
-                    document.body.style.height = '{inverse_scale * 100}%';
-                }}
-            """)
-            
-            # Method 3: Viewport meta tag approach (for some elements)
-            self.browser.execute_script(f"""
-                var meta = document.querySelector('meta[name="viewport"]');
-                if (!meta) {{
-                    meta = document.createElement('meta');
-                    meta.name = 'viewport';
-                    document.head.appendChild(meta);
-                }}
-                meta.content = 'width=device-width, initial-scale={self.browser_zoom_level}, user-scalable=yes';
-            """)
-            
-            print(f"✅ Browser zoom ({zoom_percentage}%) applied successfully")
-            
-        except Exception as e:
-            print(f"⚠️  Warning: Could not apply browser zoom: {str(e)}")
-    
     def find_next_button_advanced(self):
         """Advanced button finding with specific priority for LinkedIn patterns"""
         try:
             print("      🎯 Using advanced button detection logic...")
+            
+            # First, scroll to ensure all buttons are visible
+            print("      📜 Scrolling to reveal buttons that might be below the fold...")
+            self.scroll_to_reveal_buttons()
             
             # Method 1: Look for buttons with specific LinkedIn data attributes
             linkedin_buttons = self.browser.find_elements(By.CSS_SELECTOR, 
@@ -978,6 +943,8 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                         btn_text = btn.text.strip().lower()
                         btn_aria = (btn.get_attribute('aria-label') or '').lower()
                         print(f"      ✅ Found LinkedIn-specific button: '{btn_text}' / '{btn_aria}'")
+                        # Ensure button is in view before returning
+                        self.scroll_to_element(btn)
                         return btn
             
             # Method 2: Look for primary buttons in the button container div
@@ -996,6 +963,8 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                         # Prioritize based on text/aria-label content
                         if any(keyword in btn_text + ' ' + btn_aria for keyword in ['next', 'continue', 'review', 'submit']):
                             print(f"      ✅ Found primary button in container: '{btn_text}' / '{btn_aria}'")
+                            # Ensure button is in view before returning
+                            self.scroll_to_element(btn)
                             return btn
             
             # Method 3: Look for buttons by aria-label with exact matching
@@ -1014,6 +983,8 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                     for btn in buttons:
                         if btn.is_displayed() and btn.is_enabled():
                             print(f"      ✅ Found button by aria-label: {btn.get_attribute('aria-label')}")
+                            # Ensure button is in view before returning
+                            self.scroll_to_element(btn)
                             return btn
                 except:
                     continue
@@ -1028,6 +999,8 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
                     # Exclude back buttons
                     if 'back' not in btn_text and 'back' not in btn_aria and 'previous' not in btn_aria:
                         print(f"      ⚠️  Found fallback primary button: '{btn_text}' / '{btn_aria}'")
+                        # Ensure button is in view before returning
+                        self.scroll_to_element(btn)
                         return btn
             
             print("      ❌ No suitable next button found with advanced detection")
@@ -1719,6 +1692,91 @@ class EnhancedLinkedInEasyApply(LinkedinEasyApply):
         except Exception as e:
             print(f"            ❌ Intelligent radio selection error: {str(e)}")
             return False
+    
+    def scroll_to_reveal_buttons(self):
+        """Scroll page to reveal buttons that might be below the fold"""
+        try:
+            print("         📜 Performing systematic scroll to reveal all buttons...")
+            
+            # Method 1: Scroll to bottom of the page to reveal any hidden buttons
+            self.browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
+            
+            # Method 2: Scroll to find button containers
+            button_container_selectors = [
+                "div.display-flex.justify-flex-end",
+                "div[class*='button-container']",
+                "div[class*='form-actions']",
+                ".jobs-easy-apply-modal__footer",
+                ".artdeco-modal__actionbar"
+            ]
+            
+            for selector in button_container_selectors:
+                try:
+                    containers = self.browser.find_elements(By.CSS_SELECTOR, selector)
+                    for container in containers:
+                        if container.is_displayed():
+                            self.browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", container)
+                            time.sleep(0.3)
+                            print(f"         📍 Scrolled to button container: {selector}")
+                            break
+                except:
+                    continue
+            
+            # Method 3: Smart scroll to find any primary buttons
+            try:
+                primary_buttons = self.browser.find_elements(By.CSS_SELECTOR, "button.artdeco-button--primary")
+                for btn in primary_buttons[-3:]:  # Check last 3 primary buttons (likely to be submit/next)
+                    try:
+                        btn_text = btn.text.strip().lower()
+                        if any(keyword in btn_text for keyword in ['next', 'continue', 'review', 'submit']):
+                            self.browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
+                            time.sleep(0.3)
+                            print(f"         📍 Scrolled to primary button: '{btn_text}'")
+                            break
+                    except:
+                        continue
+            except:
+                pass
+            
+            # Method 4: Ensure we can see both top and bottom of form
+            print("         📜 Final scroll adjustments...")
+            # Scroll up a bit to make sure we can see the full button area
+            self.browser.execute_script("window.scrollBy(0, -100);")
+            time.sleep(0.3)
+            
+            print("         ✅ Scroll to reveal buttons completed")
+            
+        except Exception as e:
+            print(f"         ❌ Error during scroll to reveal buttons: {str(e)}")
+    
+    def scroll_to_element(self, element):
+        """Scroll to specific element to ensure it's visible and clickable"""
+        try:
+            print(f"         📍 Scrolling to element to ensure visibility...")
+            
+            # Method 1: Standard scroll into view
+            self.browser.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", element)
+            time.sleep(0.5)
+            
+            # Method 2: Ensure element is not obscured by checking its position
+            element_rect = element.rect
+            window_height = self.browser.execute_script("return window.innerHeight;")
+            
+            # If element is too close to bottom, scroll up a bit more
+            if element_rect['y'] > window_height * 0.8:
+                self.browser.execute_script("window.scrollBy(0, -150);")
+                time.sleep(0.3)
+            
+            # If element is too close to top, scroll down a bit
+            elif element_rect['y'] < window_height * 0.1:
+                self.browser.execute_script("window.scrollBy(0, 150);")
+                time.sleep(0.3)
+            
+            print(f"         ✅ Element scrolled into optimal view position")
+            
+        except Exception as e:
+            print(f"         ⚠️  Warning: Could not scroll to element: {str(e)}")
     
     def print_ai_stats(self):
         """Print AI application statistics"""

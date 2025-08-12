@@ -42,7 +42,7 @@ class LinkedInFormHandler:
             
             # Create LLM instance for OpenAI
             llm = ChatOpenAI(
-                model="gpt-4o",
+                model="gpt-5",
                 api_key=self.api_key
             )
             
@@ -55,7 +55,7 @@ class LinkedInFormHandler:
                 save_conversation_path="./logs/browser_use_conversations"
             )
             
-            self.logger.info("Browser-use agent initialized successfully with OpenAI GPT-4o")
+            self.logger.info("Browser-use agent initialized successfully with OpenAI GPT-5")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize browser-use agent: {str(e)}")
@@ -109,6 +109,19 @@ IMPORTANT RULES:
 7. Always click "Continue" or "Next" buttons to proceed through the form
 8. If you encounter "Submit Application", only click it if all required fields are properly filled
 
+CRITICAL BUTTON DETECTION:
+9. ALWAYS scroll down to the bottom of the page to check for Next/Continue/Submit/Review buttons
+10. Many LinkedIn forms have buttons stuck at the bottom that are not visible without scrolling
+11. Before looking for buttons, scroll to the bottom of the page first, then scroll back up if needed
+12. If you cannot find Next/Continue buttons, scroll down completely and look again
+13. Look for buttons with text like: "Next", "Continue", "Review", "Submit Application", "Review your application"
+
+SCROLLING INSTRUCTIONS:
+- Always scroll down to reveal hidden form elements and buttons
+- Some forms have multiple sections that only become visible after scrolling
+- Check both top and bottom of the page for navigation buttons
+- If stuck, try scrolling to reveal more content or buttons
+
 Please fill out this LinkedIn job application form step by step, following these instructions carefully.
 """
         
@@ -141,7 +154,7 @@ Please fill out this LinkedIn job application form step by step, following these
             from browser_use.llm import ChatOpenAI
             
             llm = ChatOpenAI(
-                model="gpt-4o",
+                model="gpt-5",
                 api_key=self.api_key
             )
             
@@ -211,7 +224,7 @@ Be precise and use the information provided above to give accurate answers.
             from browser_use.llm import ChatOpenAI
             
             llm = ChatOpenAI(
-                model="gpt-4o",
+                model="gpt-5",
                 api_key=self.api_key
             )
             
