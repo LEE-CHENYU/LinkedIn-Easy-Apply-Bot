@@ -1,4 +1,4 @@
-email: fretin13@gmail.com
+email: cl4183@columbia.edu
 password: Lcy199818
 
 disableAntiLock: False
@@ -29,21 +29,31 @@ date:
  24 hours: False
  
 positions:
- - Credit
- - Wealth Management
+#  - Credit
+#  - Wealth Management
+#  - Analysis
+ - Invest
  - Web3
  - Data
- - Analysis
  - Analyst
+ - geo
+ - energy
+#  - Economics
 #  - Japanese
  #- ...
 locations:
-#  - New York
+ - New York
+ - Los Angeles
+ - Chicago
+ - Boston
+ - Seattle
+ - San Francisco
+ - Washington
 #  - HongKong
 #  - Shanghai
- - Tokyo
- - Singapore
- - Vietnam
+#  - Tokyo
+#  - Singapore
+#  - Vietnam
 distance: 25
 
 outputFileDirectory: /Users/lichenyu/py/linkedin_bot/
