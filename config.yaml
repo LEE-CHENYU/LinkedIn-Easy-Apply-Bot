@@ -198,3 +198,4 @@ eeo:
  citizenship: Chinese
 
  formHandlingMode: "ai-only"
+aiTimeout: 300  # AI processing timeout in seconds (5 minutes)

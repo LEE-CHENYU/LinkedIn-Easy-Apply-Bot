@@ -83,6 +83,7 @@ class PlaywrightLinkedInBot:
         logger.info("🎭 Playwright LinkedIn Bot initialized")
         logger.info(f"🤖 AI form handling: {'Enabled' if self.use_ai_forms else 'Disabled'}")
         logger.info(f"🔧 Form handling mode: {self.form_handling_mode}")
+        logger.info(f"⏱️ AI timeout: {self.ai_timeout} seconds")
     
     def load_openai_api_key(self) -> Optional[str]:
         """Load OpenAI API key from environment or .env file"""
@@ -422,6 +423,156 @@ class PlaywrightLinkedInBot:
             logger.warning("❌ Non-AI modes not implemented in this version")
             return False
     
+    async def force_close_all_modals(self):
+        """Forcefully close ALL modals and windows - hardcoded aggressive approach"""
+        logger.info("🔨 FORCE CLOSING ALL MODALS (hardcoded recovery)")
+        
+        try:
+            # Step 0: Check if we're in an "Apply to [Company]" modal
+            try:
+                modal_header = await self.page.query_selector("h2.jobs-easy-apply-modal__title")
+                if not modal_header:
+                    modal_header = await self.page.query_selector("h2:has-text('Apply to')")
+                
+                if modal_header:
+                    header_text = await modal_header.text_content()
+                    logger.info(f"📋 Detected application modal: {header_text}")
+                    
+                    # Try to find the X/Dismiss button specifically for this modal
+                    dismiss_button = await self.page.query_selector(".artdeco-modal__dismiss")
+                    if dismiss_button and await dismiss_button.is_visible():
+                        logger.info("✅ Found modal dismiss button, clicking...")
+                        await dismiss_button.click(force=True)
+                        await asyncio.sleep(1)
+                        return  # Successfully closed
+            except:
+                pass
+            
+            # Step 1: Press Escape multiple times
+            logger.info("⌨️ Pressing Escape 5 times...")
+            for i in range(5):
+                await self.page.keyboard.press("Escape")
+                await asyncio.sleep(0.3)
+            
+            # Step 2: Try ALL possible close button selectors
+            close_selectors = [
+                # LinkedIn Application Modal specific (PRIORITY)
+                ".artdeco-modal__dismiss",  # The X button on LinkedIn modals
+                ".artdeco-modal__dismiss-icon",
+                "button[aria-label='Dismiss']",
+                ".jobs-easy-apply-modal button[aria-label='Dismiss']",
+                ".jobs-easy-apply-modal .artdeco-modal__dismiss",
+                "[data-test-modal-close-btn]",
+                "[data-control-name='discard_application']",
+                
+                # Standard close buttons
+                "button:has-text('Close')",
+                "button:has-text('Cancel')",
+                "button:has-text('Done')",
+                "button:has-text('Dismiss')",
+                "button:has-text('X')",
+                "button:has-text('x')",
+                "button:has-text('✕')",
+                "button:has-text('×')",
+                
+                # Aria labels
+                "[aria-label='Close']",
+                "[aria-label='Dismiss']",
+                "[aria-label='Cancel']",
+                "[aria-label*='close' i]",
+                "[aria-label*='dismiss' i]",
+                
+                # Generic modal close
+                ".modal-close",
+                ".close-modal",
+                ".btn-close",
+                "[data-dismiss='modal']",
+                
+                # SVG/Icon close buttons
+                "svg[aria-label='Close']",
+                "svg[aria-label='Dismiss']",
+                
+                # Any button with role
+                "[role='button'][aria-label*='Close' i]",
+                "[role='button'][aria-label*='Dismiss' i]"
+            ]
+            
+            logger.info(f"🔍 Searching for close buttons with {len(close_selectors)} selectors...")
+            closed = False
+            for selector in close_selectors:
+                try:
+                    buttons = await self.page.query_selector_all(selector)
+                    for button in buttons:
+                        if await button.is_visible():
+                            logger.info(f"✅ Found close button: {selector}")
+                            await button.click(force=True)  # Force click even if intercepted
+                            await asyncio.sleep(0.5)
+                            closed = True
+                            break
+                except Exception as e:
+                    continue
+                if closed:
+                    break
+            
+            # Step 3: Click outside any modals (multiple positions)
+            logger.info("🖱️ Clicking outside modals at multiple positions...")
+            click_positions = [
+                {"x": 10, "y": 10},
+                {"x": 100, "y": 100},
+                {"x": 50, "y": 200},
+                {"x": 300, "y": 50}
+            ]
+            for pos in click_positions:
+                try:
+                    await self.page.click("body", position=pos, force=True)
+                    await asyncio.sleep(0.2)
+                except:
+                    pass
+            
+            # Step 4: Try to find ANY button with close-related text
+            logger.info("🔍 Searching ALL buttons for close-related text...")
+            try:
+                all_buttons = await self.page.query_selector_all("button")
+                logger.info(f"Found {len(all_buttons)} total buttons on page")
+                
+                close_words = ['close', 'cancel', 'dismiss', 'done', 'x', '×', '✕', 'discard', 'exit', 'back']
+                for button in all_buttons[:20]:  # Check first 20 buttons
+                    try:
+                        text = await button.text_content()
+                        if text and any(word in text.lower() for word in close_words):
+                            logger.info(f"📍 Found button with text: {text}")
+                            await button.click(force=True)
+                            await asyncio.sleep(0.5)
+                            break
+                    except:
+                        continue
+            except Exception as e:
+                logger.warning(f"⚠️ Error checking all buttons: {str(e)}")
+            
+            # Step 5: Final escape attempts
+            logger.info("⌨️ Final Escape key attempts...")
+            for _ in range(3):
+                await self.page.keyboard.press("Escape")
+                await asyncio.sleep(0.2)
+            
+            # Step 6: Check if we need to navigate away
+            current_url = self.page.url
+            if '/jobs/view/' in current_url or 'application' in current_url.lower():
+                logger.info("🔄 Still on application page, navigating back to job search...")
+                await self.page.goto("https://linkedin.com/jobs/search/", wait_until='domcontentloaded')
+                await asyncio.sleep(2)
+            
+            logger.info("✅ Force close sequence completed")
+            
+        except Exception as e:
+            logger.error(f"❌ Error in force_close_all_modals: {str(e)}")
+            # Last resort - navigate away
+            try:
+                logger.info("🚨 LAST RESORT: Navigating to job search page...")
+                await self.page.goto("https://linkedin.com/jobs/search/", wait_until='domcontentloaded')
+            except:
+                pass
+
     async def handle_application_success(self) -> bool:
         """Handle success modal after application submission"""
         try:
@@ -535,6 +686,21 @@ class PlaywrightLinkedInBot:
             except asyncio.TimeoutError:
                 self.ai_failure_count += 1
                 logger.error(f"❌ AI application timed out after {self.ai_timeout} seconds")
+                
+                # HARDCODED FORCEFUL MODAL CLOSING
+                logger.info("⚠️ Timeout occurred - starting forceful modal closing...")
+                await self.force_close_all_modals()
+                
+                # Double-check we're back on job search
+                current_url = self.page.url
+                if '/jobs/view/' in current_url or 'application' in current_url.lower():
+                    logger.info("🔄 Still stuck after force close, navigating to job search...")
+                    try:
+                        await self.page.goto("https://linkedin.com/jobs/search/", wait_until='domcontentloaded', timeout=10000)
+                    except:
+                        logger.error("❌ Failed to navigate back to job search")
+                
+                logger.info("✅ Recovered from timeout, ready for next job")
                 return False
                 
         except Exception as e:
@@ -546,7 +712,11 @@ class PlaywrightLinkedInBot:
         """Build comprehensive AI instructions for form filling"""
         
         instructions = f"""
-You are helping fill out a LinkedIn job application for {job_title} at {company}. Please follow these guidelines:
+You are helping fill out a LinkedIn job application for {job_title} at {company}. 
+
+⚠️ MOST IMPORTANT: Always prioritize clicking Next, Continue, Review, and Submit buttons to progress through the form. Don't get stuck on one page - keep moving forward!
+
+⚠️ CRITICAL: If you see "Apply to [Company Name]" modal window (like "Apply to TikTok"), this is an application form. Either complete it by clicking Submit Application, or if you can't proceed, look for the X button in the top-right corner to close it.
 
 PERSONAL INFORMATION:
 - First Name: {self.personal_info.get('First Name', 'John')}
@@ -587,21 +757,52 @@ IMPORTANT RULES:
 4. For text fields without specific matches, use reasonable defaults
 5. For file uploads, skip them (they should be handled separately)
 6. For EEO questions (gender, race, veteran status), select "Prefer not to answer" or "Decline to answer"
-7. Always click "Continue" or "Next" buttons to proceed through the form
-8. If you encounter "Submit Application", only click it if all required fields are properly filled
 
-CRITICAL BUTTON DETECTION:
-9. ALWAYS scroll down to the bottom of the page to check for Next/Continue/Submit/Review buttons
-10. Many LinkedIn forms have buttons stuck at the bottom that are not visible without scrolling
-11. Before looking for buttons, scroll to the bottom of the page first, then scroll back up if needed
-12. If you cannot find Next/Continue buttons, scroll down completely and look again
-13. Look for buttons with text like: "Next", "Continue", "Review", "Submit Application", "Review your application"
+BUTTON PRIORITY (ALWAYS DO THIS):
+7. PRIORITIZE clicking these buttons when visible:
+   - "Next" button - click immediately when visible to move forward
+   - "Review" or "Review Application" button - click to review before submission
+   - "Submit" or "Submit Application" button - click when all fields are filled
+   - "Continue" button - click to proceed through multi-step forms
+8. After filling each section, ALWAYS look for and click Next/Continue/Review buttons
+9. Don't stay on the same page - always progress forward by clicking navigation buttons
+10. If you see "Submit Application", only click it if all required fields are properly filled
+
+CRITICAL BUTTON DETECTION AND PRIORITY:
+11. ALWAYS scroll down to check for navigation buttons at the bottom of the page
+12. Many LinkedIn forms have buttons stuck at the bottom that are not visible without scrolling
+13. PRIORITY ORDER for clicking buttons:
+    a. First priority: "Next" button (to move to next section)
+    b. Second priority: "Continue" button (to proceed)
+    c. Third priority: "Review" or "Review Application" (before final submission)
+    d. Fourth priority: "Submit" or "Submit Application" (final step)
+14. After filling ANY form section, immediately look for and click Next/Continue
+15. If you cannot find navigation buttons, scroll down completely and look again
+16. Don't wait - click navigation buttons as soon as they're available
 
 SCROLLING INSTRUCTIONS:
 - Always scroll down to reveal hidden form elements and buttons
 - Some forms have multiple sections that only become visible after scrolling
 - Check both top and bottom of the page for navigation buttons
 - If stuck, try scrolling to reveal more content or buttons
+
+APPLICATION MODAL HANDLING ("Apply to [Company]" windows):
+17. When you see a modal with "Apply to TikTok" or similar header:
+    - This is the main application form window
+    - Complete the form by filling fields and clicking Next/Submit
+    - If you cannot proceed or get stuck:
+      * Look for the X button in the top-right corner of the modal
+      * The dismiss button is usually .artdeco-modal__dismiss
+      * Click it to close the modal and move to next job
+    - Don't leave modals open - either complete or close them
+
+STUCK STATE RECOVERY:
+18. If completely stuck on any form or modal:
+    - PRIORITY: Click the X button in top-right corner of modal
+    - Look for Close, Cancel, Dismiss, or X buttons
+    - Press Escape key multiple times
+    - Navigate away if nothing else works
+    - Don't waste time - close stuck forms and continue
 
 Please fill out this LinkedIn job application form step by step, following these instructions carefully.
 """
