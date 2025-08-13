@@ -503,7 +503,33 @@ class PlaywrightLinkedInBot:
                         logger.info("✅ Found modal dismiss button, clicking...")
                         await dismiss_button.click(force=True)
                         await asyncio.sleep(1)
-                        return  # Successfully closed
+                        
+                        # CRITICAL: Handle "Save/Discard" confirmation dialog
+                        logger.info("🔍 Checking for Save/Discard confirmation dialog...")
+                        
+                        # Look for Discard button in confirmation dialog
+                        discard_selectors = [
+                            "button[data-control-name='discard_application_confirm_btn']",
+                            "button[data-test-dialog-secondary-btn]:has-text('Discard')",
+                            "button:has-text('Discard')",
+                            ".artdeco-modal__confirm-dialog-btn:has-text('Discard')",
+                            "[aria-label='Discard']"
+                        ]
+                        
+                        for selector in discard_selectors:
+                            try:
+                                discard_btn = await self.page.query_selector(selector)
+                                if discard_btn and await discard_btn.is_visible():
+                                    logger.info("✅ Found Discard button, clicking to confirm close...")
+                                    await discard_btn.click(force=True)
+                                    await asyncio.sleep(1)
+                                    logger.info("✅ Application discarded and modal closed")
+                                    return  # Successfully closed
+                            except:
+                                continue
+                        
+                        # If no Discard button found, might have closed already
+                        return
             except:
                 pass
             
@@ -515,7 +541,12 @@ class PlaywrightLinkedInBot:
             
             # Step 2: Try ALL possible close button selectors
             close_selectors = [
-                # LinkedIn Application Modal specific (PRIORITY)
+                # Discard confirmation dialog (HIGHEST PRIORITY)
+                "button[data-control-name='discard_application_confirm_btn']",
+                "button:has-text('Discard')",
+                ".artdeco-modal__confirm-dialog-btn:has-text('Discard')",
+                
+                # LinkedIn Application Modal specific
                 ".artdeco-modal__dismiss",  # The X button on LinkedIn modals
                 ".artdeco-modal__dismiss-icon",
                 "button[aria-label='Dismiss']",
@@ -804,8 +835,9 @@ You are helping fill out a LinkedIn job application for {job_title} at {company}
 ⚠️ CRITICAL: If you see "Apply to [Company Name]" modal window (like "Apply to TikTok"), this is an application form. 
    - If you can complete it: Fill the form and click Submit Application
    - If you CANNOT proceed: IMMEDIATELY click the X button (.artdeco-modal__dismiss) in the top-right corner
+   - IMPORTANT: After clicking X, you may see "Save this application?" dialog - ALWAYS click "Discard" button
    - DO NOT leave the modal open - you MUST either submit or close it
-   - If stuck for more than 30 seconds, close the modal immediately
+   - If stuck for more than 30 seconds, close the modal immediately and click Discard
 
 ⚠️ PAGE NAVIGATION: DO NOT navigate to a different page. Stay on the current job listings page and only work within the application modal/form.
 
@@ -897,6 +929,7 @@ IMPORTANT - DO NOT CLICK OTHER JOBS:
 STUCK STATE RECOVERY:
 19. If completely stuck on any form or modal:
     - PRIORITY: Click the X button in top-right corner of modal (.artdeco-modal__dismiss)
+    - If you see "Save this application?" dialog after clicking X, click "Discard"
     - Look for Close, Cancel, Dismiss, or X buttons
     - Press Escape key multiple times
     - Navigate away if nothing else works
@@ -905,6 +938,7 @@ STUCK STATE RECOVERY:
 FAILURE HANDLING:
 20. If you determine the application CANNOT be submitted:
     - IMMEDIATELY close the modal using the X button
+    - When "Save this application?" appears, ALWAYS click "Discard" button
     - Do not keep trying the same failing action
     - Report "Application could not be completed" and close the modal
     - The system needs the modal closed to move to the next job
