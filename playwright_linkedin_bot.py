@@ -204,8 +204,10 @@ class PlaywrightLinkedInBot:
                     await asyncio.sleep(random.uniform(1, 2) * self.sleep_multiplier)
                     
                     logger.info("🎯 Starting application process for this page...")
+                    logger.info("🔒 PAGE LOCK: Will process ALL jobs on this page before navigating")
                     await self.apply_jobs(location)
                     logger.info("✅ Applying to jobs on this page completed!")
+                    logger.info("🔓 PAGE UNLOCK: Ready to navigate to next page")
                     
                     # Sleep management
                     time_left = minimum_page_time - time.time()
@@ -237,7 +239,18 @@ class PlaywrightLinkedInBot:
         await self.avoid_lock()
     
     async def apply_jobs(self, location: str):
-        """Apply to jobs on current page"""
+        """Apply to jobs on current page with progress tracking"""
+        
+        # Initialize page job tracking
+        page_job_tracker = {
+            'total_jobs': 0,
+            'processed_jobs': 0,
+            'applied_jobs': 0,
+            'skipped_jobs': 0,
+            'failed_jobs': 0,
+            'current_job_index': 0,
+            'job_statuses': {}  # Track status of each job by index
+        }
         
         # Check for no jobs message
         try:
@@ -269,7 +282,10 @@ class PlaywrightLinkedInBot:
             
             # Find all job elements
             job_elements = await self.page.query_selector_all('.job-card-container')
+            page_job_tracker['total_jobs'] = len(job_elements)
+            
             logger.info(f"📋 Found {len(job_elements)} job listings on page")
+            logger.info(f"📊 Starting page job tracking - will process ALL {len(job_elements)} jobs before navigation")
             
             if not job_elements:
                 logger.warning("⚠️ No job elements found")
@@ -281,41 +297,78 @@ class PlaywrightLinkedInBot:
                 await self.scroll_slow_playwright(job_results)
                 await self.scroll_slow_playwright(job_results, step=300, reverse=True)
             
-            # Process each job
+            # Process each job with tracking
             for index, job_element in enumerate(job_elements):
                 try:
+                    page_job_tracker['current_job_index'] = index
+                    
+                    # Log progress
+                    logger.info(f"📈 Page Progress: {page_job_tracker['processed_jobs']}/{page_job_tracker['total_jobs']} jobs processed")
+                    logger.info(f"   ✅ Applied: {page_job_tracker['applied_jobs']}, ⏭️ Skipped: {page_job_tracker['skipped_jobs']}, ❌ Failed: {page_job_tracker['failed_jobs']}")
+                    
                     # Extract job information
                     job_title, company = await self.extract_job_info(job_element)
                     
                     if not job_title or not company:
                         logger.warning(f"⚠️ Skipping job {index+1} - missing title or company")
+                        page_job_tracker['skipped_jobs'] += 1
+                        page_job_tracker['job_statuses'][index] = 'skipped_no_info'
+                        page_job_tracker['processed_jobs'] += 1
                         continue
                     
-                    logger.info(f"🎯 Processing job {index+1}: {job_title} at {company}")
+                    logger.info(f"🎯 Processing job {index+1}/{page_job_tracker['total_jobs']}: {job_title} at {company}")
                     
                     # Check blacklists
                     if self.is_blacklisted(job_title, company):
                         logger.info(f"⛔ Skipping blacklisted job: {job_title} at {company}")
+                        page_job_tracker['skipped_jobs'] += 1
+                        page_job_tracker['job_statuses'][index] = 'blacklisted'
+                        page_job_tracker['processed_jobs'] += 1
                         continue
                     
                     # Click on job to view details
                     await job_element.click()
                     await asyncio.sleep(random.uniform(1, 2) * self.sleep_multiplier)
                     
-                    # Try to apply
-                    success = await self.apply_to_job(job_title, company)
+                    # Try to apply with page context
+                    success = await self.apply_to_job_with_context(job_title, company, page_job_tracker)
                     
                     if success:
                         logger.info(f"✅ Successfully applied to {job_title} at {company}")
+                        page_job_tracker['applied_jobs'] += 1
+                        page_job_tracker['job_statuses'][index] = 'applied'
                     else:
                         logger.info(f"❌ Failed to apply to {job_title} at {company}")
+                        page_job_tracker['failed_jobs'] += 1
+                        page_job_tracker['job_statuses'][index] = 'failed'
+                        
+                        # CRITICAL: Force close any open modals after failure
+                        logger.info("🔄 Closing application modal after failure...")
+                        await self.force_close_all_modals()
+                        
+                        # Ensure we're back on job listings
+                        await asyncio.sleep(1)
+                        current_url = self.page.url
+                        if '/jobs/view/' in current_url:
+                            logger.info("📍 Still on job view, returning to listings...")
+                            await self.page.keyboard.press("Escape")
+                            await asyncio.sleep(0.5)
+                    
+                    page_job_tracker['processed_jobs'] += 1
                     
                     # Small delay between applications
                     await asyncio.sleep(random.uniform(2, 4) * self.sleep_multiplier)
                     
                 except Exception as e:
                     logger.error(f"❌ Error processing job {index+1}: {str(e)}")
+                    page_job_tracker['failed_jobs'] += 1
+                    page_job_tracker['job_statuses'][index] = 'error'
+                    page_job_tracker['processed_jobs'] += 1
                     continue
+            
+            # Final page summary
+            logger.info(f"✅ PAGE COMPLETE - Processed all {page_job_tracker['total_jobs']} jobs")
+            logger.info(f"📊 Final Stats: Applied: {page_job_tracker['applied_jobs']}, Skipped: {page_job_tracker['skipped_jobs']}, Failed: {page_job_tracker['failed_jobs']}")
         
         except Exception as e:
             logger.error(f"❌ Error in apply_jobs: {str(e)}")
@@ -375,6 +428,12 @@ class PlaywrightLinkedInBot:
         except Exception as e:
             logger.error(f"❌ Error extracting job info: {str(e)}")
             return "Unknown", "Unknown"
+    
+    async def apply_to_job_with_context(self, job_title: str, company: str, page_tracker: dict) -> bool:
+        """Apply to job with page context for AI"""
+        # Store page context for AI prompt
+        self.current_page_tracker = page_tracker
+        return await self.apply_to_job(job_title, company)
     
     async def apply_to_job(self, job_title: str = "Unknown", company: str = "Unknown") -> bool:
         """Apply to a specific job using AI-first approach"""
@@ -681,6 +740,11 @@ class PlaywrightLinkedInBot:
                 else:
                     self.ai_failure_count += 1
                     logger.warning("❌ AI application may not have been submitted")
+                    
+                    # Force close modal after unsuccessful application
+                    logger.info("🔄 Closing modal after unsuccessful submission...")
+                    await self.force_close_all_modals()
+                    
                     return False
                     
             except asyncio.TimeoutError:
@@ -706,17 +770,44 @@ class PlaywrightLinkedInBot:
         except Exception as e:
             self.ai_failure_count += 1
             logger.error(f"❌ AI application error: {str(e)}")
+            
+            # Force close modal after any error
+            logger.info("🔄 Closing modal after error...")
+            try:
+                await self.force_close_all_modals()
+            except:
+                pass
+            
             return False
     
     def build_ai_instructions(self, job_title: str, company: str) -> str:
         """Build comprehensive AI instructions for form filling"""
         
+        # Add page progress context if available
+        page_context = ""
+        if hasattr(self, 'current_page_tracker') and self.current_page_tracker:
+            tracker = self.current_page_tracker
+            page_context = f"""
+📊 CURRENT PAGE PROGRESS:
+- Processing job {tracker.get('current_job_index', 0) + 1} of {tracker.get('total_jobs', 0)} on this page
+- Jobs processed so far: {tracker.get('processed_jobs', 0)}
+- Applied: {tracker.get('applied_jobs', 0)}, Skipped: {tracker.get('skipped_jobs', 0)}, Failed: {tracker.get('failed_jobs', 0)}
+- ⚠️ DO NOT NAVIGATE AWAY from this job listing page - we need to process all {tracker.get('total_jobs', 0)} jobs
+- After completing or closing this application, return to the job listings to continue
+"""
+        
         instructions = f"""
 You are helping fill out a LinkedIn job application for {job_title} at {company}. 
-
+{page_context}
 ⚠️ MOST IMPORTANT: Always prioritize clicking Next, Continue, Review, and Submit buttons to progress through the form. Don't get stuck on one page - keep moving forward!
 
-⚠️ CRITICAL: If you see "Apply to [Company Name]" modal window (like "Apply to TikTok"), this is an application form. Either complete it by clicking Submit Application, or if you can't proceed, look for the X button in the top-right corner to close it.
+⚠️ CRITICAL: If you see "Apply to [Company Name]" modal window (like "Apply to TikTok"), this is an application form. 
+   - If you can complete it: Fill the form and click Submit Application
+   - If you CANNOT proceed: IMMEDIATELY click the X button (.artdeco-modal__dismiss) in the top-right corner
+   - DO NOT leave the modal open - you MUST either submit or close it
+   - If stuck for more than 30 seconds, close the modal immediately
+
+⚠️ PAGE NAVIGATION: DO NOT navigate to a different page. Stay on the current job listings page and only work within the application modal/form.
 
 PERSONAL INFORMATION:
 - First Name: {self.personal_info.get('First Name', 'John')}
@@ -796,13 +887,28 @@ APPLICATION MODAL HANDLING ("Apply to [Company]" windows):
       * Click it to close the modal and move to next job
     - Don't leave modals open - either complete or close them
 
+IMPORTANT - DO NOT CLICK OTHER JOBS:
+18. DO NOT click on other job listings in the background
+    - Focus ONLY on the current application modal
+    - Do not navigate to other jobs on the page
+    - The system will automatically move to the next job after this one
+    - Stay within the current modal/form until completed or closed
+
 STUCK STATE RECOVERY:
-18. If completely stuck on any form or modal:
-    - PRIORITY: Click the X button in top-right corner of modal
+19. If completely stuck on any form or modal:
+    - PRIORITY: Click the X button in top-right corner of modal (.artdeco-modal__dismiss)
     - Look for Close, Cancel, Dismiss, or X buttons
     - Press Escape key multiple times
     - Navigate away if nothing else works
     - Don't waste time - close stuck forms and continue
+
+FAILURE HANDLING:
+20. If you determine the application CANNOT be submitted:
+    - IMMEDIATELY close the modal using the X button
+    - Do not keep trying the same failing action
+    - Report "Application could not be completed" and close the modal
+    - The system needs the modal closed to move to the next job
+    - Leaving the modal open will block all other jobs
 
 Please fill out this LinkedIn job application form step by step, following these instructions carefully.
 """
