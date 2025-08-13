@@ -186,15 +186,27 @@ class PlaywrightLinkedInBot:
         minimum_time = 15 * 1
         minimum_page_time = time.time() + minimum_time
         
-        logger.info(f"🚀 Starting job applications for {len(searches)} search combinations")
+        # Search-level statistics tracking
+        search_stats = {
+            'total_searches': len(searches),
+            'processed_searches': 0,
+            'skipped_searches': 0,
+            'completed_searches': 0,
+            'failed_searches': 0
+        }
         
-        for (position, location) in searches:
+        logger.info(f"🚀 Starting job applications for {search_stats['total_searches']} search combinations")
+        
+        for search_index, (position, location) in enumerate(searches, 1):
             location_url = "&location=" + location
             job_page_number = -1
             
-            logger.info(f"🔍 Starting search for {position} in {location}")
+            logger.info(f"🔍 Starting search {search_index}/{search_stats['total_searches']}: {position} in {location}")
             
             try:
+                search_completed_pages = 0
+                search_skipped = False
+                
                 while True:
                     page_sleep += 1
                     job_page_number += 1
@@ -205,9 +217,32 @@ class PlaywrightLinkedInBot:
                     
                     logger.info("🎯 Starting application process for this page...")
                     logger.info("🔒 PAGE LOCK: Will process ALL jobs on this page before navigating")
-                    await self.apply_jobs(location)
-                    logger.info("✅ Applying to jobs on this page completed!")
-                    logger.info("🔓 PAGE UNLOCK: Ready to navigate to next page")
+                    
+                    try:
+                        await self.apply_jobs(location)
+                        logger.info("✅ Applying to jobs on this page completed!")
+                        logger.info("🔓 PAGE UNLOCK: Ready to navigate to next page")
+                        search_completed_pages += 1
+                        
+                    except Exception as page_error:
+                        error_message = str(page_error)
+                        
+                        # Check if this is a search-level skip (no Easy Apply jobs)
+                        if "No Easy Apply jobs found" in error_message or "skipping search" in error_message:
+                            logger.warning(f"⏭️ SEARCH SKIPPED: {position} in {location} - {error_message}")
+                            search_stats['skipped_searches'] += 1
+                            search_skipped = True
+                            break  # Skip this entire search combination
+                        
+                        # Check if no more jobs on this page (normal pagination end)
+                        elif "No more jobs on this page" in error_message:
+                            logger.info(f"📄 No more jobs on page {job_page_number} for {position} in {location}")
+                            break  # Move to next search combination
+                        
+                        # Other errors - log but continue to next page
+                        else:
+                            logger.error(f"❌ Error on page {job_page_number}: {error_message}")
+                            break  # Move to next search combination
                     
                     # Sleep management
                     time_left = minimum_page_time - time.time()
@@ -224,11 +259,35 @@ class PlaywrightLinkedInBot:
                         logger.info(f"😴 Extended sleep for {sleep_time/60:.1f} minutes")
                         await asyncio.sleep(sleep_time)
                         page_sleep += 1
+                
+                # Update search statistics
+                search_stats['processed_searches'] += 1
+                if search_skipped:
+                    logger.info(f"📊 Search {search_index} SKIPPED: {position} in {location}")
+                elif search_completed_pages > 0:
+                    search_stats['completed_searches'] += 1
+                    logger.info(f"📊 Search {search_index} COMPLETED: {position} in {location} ({search_completed_pages} pages processed)")
+                else:
+                    search_stats['failed_searches'] += 1
+                    logger.info(f"📊 Search {search_index} FAILED: {position} in {location}")
                         
             except Exception as e:
                 logger.error(f"❌ Error in job search loop: {str(e)}")
                 traceback.print_exc()
+                search_stats['processed_searches'] += 1
+                search_stats['failed_searches'] += 1
                 continue
+        
+        # Final search statistics summary
+        logger.info("=" * 60)
+        logger.info("🏁 FINAL SEARCH STATISTICS")
+        logger.info("=" * 60)
+        logger.info(f"📊 Total search combinations: {search_stats['total_searches']}")
+        logger.info(f"✅ Completed searches: {search_stats['completed_searches']}")
+        logger.info(f"⏭️ Skipped searches (no Easy Apply jobs): {search_stats['skipped_searches']}")
+        logger.info(f"❌ Failed searches: {search_stats['failed_searches']}")
+        logger.info(f"📈 Success rate: {(search_stats['completed_searches'] / search_stats['total_searches'] * 100):.1f}%")
+        logger.info("=" * 60)
     
     async def next_job_page(self, position: str, location: str, job_page: int):
         """Navigate to next job search page"""
@@ -251,6 +310,13 @@ class PlaywrightLinkedInBot:
             'current_job_index': 0,
             'job_statuses': {}  # Track status of each job by index
         }
+        
+        # STEP 1: Verify Easy Apply filter is active before processing jobs
+        await self.verify_and_enable_easy_apply_filter()
+        
+        # STEP 2: Check for "no Easy Apply jobs" or general no jobs message
+        if await self.check_no_easy_apply_jobs():
+            raise Exception("No Easy Apply jobs found on this page - skipping search")
         
         # Check for no jobs message
         try:
@@ -310,7 +376,7 @@ class PlaywrightLinkedInBot:
                     job_title, company = await self.extract_job_info(job_element)
                     
                     if not job_title or not company:
-                        logger.warning(f"⚠️ Skipping job {index+1} - missing title or company")
+                        logger.warning(f"⚠️ JOB SKIPPED (missing info): Job {index+1} - missing title or company")
                         page_job_tracker['skipped_jobs'] += 1
                         page_job_tracker['job_statuses'][index] = 'skipped_no_info'
                         page_job_tracker['processed_jobs'] += 1
@@ -320,7 +386,7 @@ class PlaywrightLinkedInBot:
                     
                     # Check blacklists
                     if self.is_blacklisted(job_title, company):
-                        logger.info(f"⛔ Skipping blacklisted job: {job_title} at {company}")
+                        logger.info(f"⛔ JOB SKIPPED (blacklisted): {job_title} at {company}")
                         page_job_tracker['skipped_jobs'] += 1
                         page_job_tracker['job_statuses'][index] = 'blacklisted'
                         page_job_tracker['processed_jobs'] += 1
@@ -1075,6 +1141,166 @@ Default experience for unlisted skills: {self.technology.get('default', 1)} year
             logger.info(f"   📊 Success rate: {success_rate:.1f}%")
         else:
             logger.info("🤖 No AI applications attempted")
+    
+    async def verify_and_enable_easy_apply_filter(self):
+        """Verify Easy Apply filter is active and enable it if not"""
+        try:
+            logger.info("🔍 Verifying Easy Apply filter is active...")
+            
+            # Wait a moment for filters to load
+            await asyncio.sleep(1)
+            
+            # Check if Easy Apply filter button exists and is active
+            easy_apply_selectors = [
+                'button[aria-label*="Easy Apply"]',
+                'button[data-test-filter="Easy Apply"]',
+                'button:has-text("Easy Apply")',
+                'button[aria-pressed="true"]:has-text("Easy Apply")',
+                '.jobs-search-box__filter-button:has-text("Easy Apply")',
+                '[data-control-name="all_filters_easy_apply"]'
+            ]
+            
+            easy_apply_button = None
+            for selector in easy_apply_selectors:
+                try:
+                    easy_apply_button = await self.page.query_selector(selector)
+                    if easy_apply_button:
+                        logger.info(f"✅ Found Easy Apply filter with selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if easy_apply_button:
+                # Check if button is already active (pressed/selected)
+                try:
+                    aria_pressed = await easy_apply_button.get_attribute('aria-pressed')
+                    class_list = await easy_apply_button.get_attribute('class') or ''
+                    
+                    # Check if filter is already active
+                    is_active = (
+                        aria_pressed == 'true' or
+                        'selected' in class_list.lower() or
+                        'active' in class_list.lower() or
+                        'pressed' in class_list.lower()
+                    )
+                    
+                    if is_active:
+                        logger.info("✅ Easy Apply filter is already active")
+                    else:
+                        logger.info("🔄 Easy Apply filter not active - clicking to enable...")
+                        await easy_apply_button.click()
+                        await asyncio.sleep(2)  # Wait for filter to apply
+                        logger.info("✅ Easy Apply filter enabled")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not determine Easy Apply filter state: {e}")
+                    # Try clicking anyway as a safety measure
+                    try:
+                        await easy_apply_button.click()
+                        await asyncio.sleep(2)
+                        logger.info("✅ Clicked Easy Apply filter button")
+                    except:
+                        pass
+            else:
+                logger.warning("⚠️ Easy Apply filter button not found - continuing with URL parameter")
+                
+                # Check if URL contains Easy Apply parameter
+                current_url = self.page.url
+                if 'f_AL=true' not in current_url:
+                    logger.warning("⚠️ URL missing Easy Apply parameter (f_AL=true)")
+                    # Reload page with Easy Apply filter
+                    if '?' in current_url:
+                        new_url = current_url + '&f_AL=true'
+                    else:
+                        new_url = current_url + '?f_AL=true'
+                    
+                    logger.info(f"🔄 Reloading page with Easy Apply filter: {new_url}")
+                    await self.page.goto(new_url)
+                    await asyncio.sleep(3)
+                else:
+                    logger.info("✅ URL contains Easy Apply parameter")
+                    
+        except Exception as e:
+            logger.error(f"❌ Error verifying Easy Apply filter: {e}")
+            # Continue anyway - don't block the process
+    
+    async def check_no_easy_apply_jobs(self) -> bool:
+        """Check if there are no Easy Apply jobs available and should skip this search"""
+        try:
+            logger.info("🔍 Checking for Easy Apply jobs availability...")
+            
+            # Wait for page to fully load
+            await asyncio.sleep(2)
+            
+            # Check for specific "no Easy Apply jobs" messages
+            no_easy_apply_selectors = [
+                # Text-based selectors for no Easy Apply jobs
+                'text="No Easy Apply jobs found"',
+                'text="No jobs match your Easy Apply filter"',
+                'text="Try removing the Easy Apply filter"',
+                '[data-test-id*="no-easy-apply"]',
+                '.jobs-search-no-results-banner:has-text("Easy Apply")'
+            ]
+            
+            for selector in no_easy_apply_selectors:
+                try:
+                    element = await self.page.query_selector(selector)
+                    if element:
+                        element_text = await element.text_content()
+                        logger.warning(f"⚠️ No Easy Apply jobs message found: {element_text}")
+                        return True
+                except:
+                    continue
+            
+            # Check general no results messages
+            no_results_selectors = [
+                '.jobs-search-two-pane__no-results-banner--expand',
+                '.jobs-search-no-results-banner',
+                '.artdeco-empty-state',
+                '.jobs-search-two-pane__no-results',
+                'text="No matching jobs found"'
+            ]
+            
+            for selector in no_results_selectors:
+                try:
+                    element = await self.page.query_selector(selector)
+                    if element:
+                        element_text = await element.text_content() or ''
+                        if any(phrase in element_text.lower() for phrase in [
+                            'no matching jobs',
+                            'no jobs found',
+                            'unfortunately, things aren',
+                            'no results',
+                            'try different search terms'
+                        ]):
+                            logger.warning(f"⚠️ No jobs message found: {element_text.strip()}")
+                            return True
+                except:
+                    continue
+            
+            # Check if job list container exists but is empty
+            try:
+                job_container = await self.page.query_selector('.jobs-search-results-list')
+                if job_container:
+                    job_cards = await job_container.query_selector_all('.job-card-container')
+                    if len(job_cards) == 0:
+                        logger.warning("⚠️ Job container exists but no job cards found")
+                        return True
+                else:
+                    logger.warning("⚠️ Job results container not found")
+                    return True
+            except Exception as e:
+                logger.warning(f"⚠️ Error checking job container: {e}")
+                return True
+            
+            # If we get here, there should be jobs available
+            logger.info("✅ Easy Apply jobs appear to be available")
+            return False
+            
+        except Exception as e:
+            logger.error(f"❌ Error checking Easy Apply jobs availability: {e}")
+            # On error, assume jobs are available to avoid skipping valid searches
+            return False
     
     async def cleanup(self):
         """Clean up resources"""
