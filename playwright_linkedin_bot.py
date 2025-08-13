@@ -811,8 +811,26 @@ class PlaywrightLinkedInBot:
             
             return False
     
+    def load_ai_instructions_template(self) -> dict:
+        """Load AI instructions from YAML file"""
+        try:
+            import yaml
+            instructions_path = Path(__file__).parent / "ai_instructions.yaml"
+            if instructions_path.exists():
+                with open(instructions_path, 'r') as f:
+                    return yaml.safe_load(f)
+            else:
+                logger.warning("AI instructions YAML not found, using default")
+                return {}
+        except Exception as e:
+            logger.error(f"Error loading AI instructions: {str(e)}")
+            return {}
+    
     def build_ai_instructions(self, job_title: str, company: str) -> str:
-        """Build comprehensive AI instructions for form filling"""
+        """Build comprehensive AI instructions for form filling using YAML template"""
+        
+        # Load instructions template
+        ai_template = self.load_ai_instructions_template()
         
         # Add page progress context if available
         page_context = ""
@@ -827,21 +845,25 @@ class PlaywrightLinkedInBot:
 - After completing or closing this application, return to the job listings to continue
 """
         
-        instructions = f"""
-You are helping fill out a LinkedIn job application for {job_title} at {company}. 
-{page_context}
-⚠️ MOST IMPORTANT: Always prioritize clicking Next, Continue, Review, and Submit buttons to progress through the form. Don't get stuck on one page - keep moving forward!
-
-⚠️ CRITICAL: If you see "Apply to [Company Name]" modal window (like "Apply to TikTok"), this is an application form. 
-   - If you can complete it: Fill the form and click Submit Application
-   - If you CANNOT proceed: IMMEDIATELY click the X button (.artdeco-modal__dismiss) in the top-right corner
-   - IMPORTANT: After clicking X, you may see "Save this application?" dialog - ALWAYS click "Discard" button
-   - DO NOT leave the modal open - you MUST either submit or close it
-   - If stuck for more than 30 seconds, close the modal immediately and click Discard
-
-⚠️ PAGE NAVIGATION: DO NOT navigate to a different page. Stay on the current job listings page and only work within the application modal/form.
-
-PERSONAL INFORMATION:
+        # Build instructions from template
+        instructions_parts = [f"You are helping fill out a LinkedIn job application for {job_title} at {company}.", page_context]
+        
+        # Add priority warnings
+        if ai_template.get('main_instructions', {}).get('priority_warnings'):
+            for warning in ai_template['main_instructions']['priority_warnings']:
+                instructions_parts.append(warning)
+        
+        # Add modal handling specifics
+        if ai_template.get('main_instructions', {}).get('modal_handling'):
+            modal = ai_template['main_instructions']['modal_handling']
+            instructions_parts.append("")
+            for instruction in modal.get('instructions', []):
+                instructions_parts.append(f"   {instruction}")
+        
+        instructions_parts.append("")
+        
+        # Add personal information section
+        personal_info = f"""PERSONAL INFORMATION:
 - First Name: {self.personal_info.get('First Name', 'John')}
 - Last Name: {self.personal_info.get('Last Name', 'Doe')}
 - Phone: {self.personal_info.get('Mobile Phone Number', '555-0123')}
@@ -851,101 +873,88 @@ PERSONAL INFORMATION:
 - State: {self.personal_info.get('State', 'New York')}
 - ZIP: {self.personal_info.get('Zip', '10001')}
 - LinkedIn: {self.personal_info.get('Linkedin', 'linkedin.com/in/profile')}
-- Website: {self.personal_info.get('Website', 'github.com/profile')}
-
+- Website: {self.personal_info.get('Website', 'github.com/profile')}"""
+        instructions_parts.append(personal_info)
+        
+        # Add work authorization
+        work_auth = f"""
 WORK AUTHORIZATION:
 - Legally authorized to work in US: {'Yes' if self.checkboxes.get('legallyAuthorized', True) else 'No'}
 - Require visa sponsorship: {'Yes' if self.checkboxes.get('requireVisa', False) else 'No'}
 - Have driver's license: {'Yes' if self.checkboxes.get('driversLicence', True) else 'No'}
 - Can start immediately: {'Yes' if self.checkboxes.get('urgentFill', True) else 'No'}
 - Comfortable commuting: {'Yes' if self.checkboxes.get('commute', True) else 'No'}
-- Background check: {'Yes' if self.checkboxes.get('backgroundCheck', True) else 'No'}
-
+- Background check: {'Yes' if self.checkboxes.get('backgroundCheck', True) else 'No'}"""
+        instructions_parts.append(work_auth)
+        
+        # Add education
+        education = f"""
 EDUCATION:
 - GPA: {self.university_gpa}
-- Completed degrees: {', '.join(self.checkboxes.get('degreeCompleted', ["Bachelor's Degree"]))}
-
+- Completed degrees: {', '.join(self.checkboxes.get('degreeCompleted', ["Bachelor's Degree"]))}"""
+        instructions_parts.append(education)
+        
+        # Add experience
+        experience = f"""
 EXPERIENCE (in years):
 Technology Skills: {dict(list(self.technology.items())[:5])}
 Industry Experience: {dict(list(self.industry.items())[:5])}
-Default experience for unlisted skills: {self.technology.get('default', 1)} years
-
-LANGUAGES:
-{self.languages}
-
-IMPORTANT RULES:
-1. For "years of experience" questions, match the technology/skill mentioned to the values above
-2. For yes/no questions, use the work authorization values above
-3. For dropdown selections, choose the most appropriate option based on the context
-4. For text fields without specific matches, use reasonable defaults
-5. For file uploads, skip them (they should be handled separately)
-6. For EEO questions (gender, race, veteran status), select "Prefer not to answer" or "Decline to answer"
-
-BUTTON PRIORITY (ALWAYS DO THIS):
-7. PRIORITIZE clicking these buttons when visible:
-   - "Next" button - click immediately when visible to move forward
-   - "Review" or "Review Application" button - click to review before submission
-   - "Submit" or "Submit Application" button - click when all fields are filled
-   - "Continue" button - click to proceed through multi-step forms
-8. After filling each section, ALWAYS look for and click Next/Continue/Review buttons
-9. Don't stay on the same page - always progress forward by clicking navigation buttons
-10. If you see "Submit Application", only click it if all required fields are properly filled
-
-CRITICAL BUTTON DETECTION AND PRIORITY:
-11. ALWAYS scroll down to check for navigation buttons at the bottom of the page
-12. Many LinkedIn forms have buttons stuck at the bottom that are not visible without scrolling
-13. PRIORITY ORDER for clicking buttons:
-    a. First priority: "Next" button (to move to next section)
-    b. Second priority: "Continue" button (to proceed)
-    c. Third priority: "Review" or "Review Application" (before final submission)
-    d. Fourth priority: "Submit" or "Submit Application" (final step)
-14. After filling ANY form section, immediately look for and click Next/Continue
-15. If you cannot find navigation buttons, scroll down completely and look again
-16. Don't wait - click navigation buttons as soon as they're available
-
-SCROLLING INSTRUCTIONS:
-- Always scroll down to reveal hidden form elements and buttons
-- Some forms have multiple sections that only become visible after scrolling
-- Check both top and bottom of the page for navigation buttons
-- If stuck, try scrolling to reveal more content or buttons
-
-APPLICATION MODAL HANDLING ("Apply to [Company]" windows):
-17. When you see a modal with "Apply to TikTok" or similar header:
-    - This is the main application form window
-    - Complete the form by filling fields and clicking Next/Submit
-    - If you cannot proceed or get stuck:
-      * Look for the X button in the top-right corner of the modal
-      * The dismiss button is usually .artdeco-modal__dismiss
-      * Click it to close the modal and move to next job
-    - Don't leave modals open - either complete or close them
-
-IMPORTANT - DO NOT CLICK OTHER JOBS:
-18. DO NOT click on other job listings in the background
-    - Focus ONLY on the current application modal
-    - Do not navigate to other jobs on the page
-    - The system will automatically move to the next job after this one
-    - Stay within the current modal/form until completed or closed
-
-STUCK STATE RECOVERY:
-19. If completely stuck on any form or modal:
-    - PRIORITY: Click the X button in top-right corner of modal (.artdeco-modal__dismiss)
-    - If you see "Save this application?" dialog after clicking X, click "Discard"
-    - Look for Close, Cancel, Dismiss, or X buttons
-    - Press Escape key multiple times
-    - Navigate away if nothing else works
-    - Don't waste time - close stuck forms and continue
-
-FAILURE HANDLING:
-20. If you determine the application CANNOT be submitted:
-    - IMMEDIATELY close the modal using the X button
-    - When "Save this application?" appears, ALWAYS click "Discard" button
-    - Do not keep trying the same failing action
-    - Report "Application could not be completed" and close the modal
-    - The system needs the modal closed to move to the next job
-    - Leaving the modal open will block all other jobs
-
-Please fill out this LinkedIn job application form step by step, following these instructions carefully.
-"""
+Default experience for unlisted skills: {self.technology.get('default', 1)} years"""
+        instructions_parts.append(experience)
+        
+        # Add languages
+        instructions_parts.append(f"\nLANGUAGES:\n{self.languages}")
+        
+        # Add sections from YAML template
+        sections_to_add = [
+            ('form_filling', 'important_rules', 'IMPORTANT RULES'),
+            ('form_filling', 'button_priority', None),
+            ('form_filling', 'button_detection', None),
+            ('scrolling', None, None),
+            ('modal_specific', 'application_modal', None),
+            ('navigation_restrictions', None, None),
+            ('error_handling', 'element_interception', None),
+            ('cdp_scroll_handling', 'safe_navigation', None),
+            ('cdp_scroll_handling', 'navigation_rules', None),
+            ('cdp_scroll_handling', 'error_recovery', None),
+            ('error_handling', 'stuck_recovery', None),
+            ('error_handling', 'failure_handling', None)
+        ]
+        
+        for section, subsection, override_title in sections_to_add:
+            if section in ai_template:
+                section_data = ai_template[section]
+                if subsection:
+                    if subsection in section_data:
+                        data = section_data[subsection]
+                        title = override_title or data.get('title', subsection.upper())
+                        instructions_parts.append(f"\n{title}:")
+                        
+                        # Add rules or steps
+                        for item in data.get('rules', data.get('steps', data.get('instructions', []))):
+                            instructions_parts.append(item)
+                else:
+                    # Handle top-level sections
+                    title = override_title or section_data.get('title', section.upper())
+                    instructions_parts.append(f"\n{title}:")
+                    
+                    # Special handling for navigation_restrictions
+                    if section == 'navigation_restrictions':
+                        if 'items_to_avoid' in section_data:
+                            instructions_parts.append("DO NOT click on these areas:")
+                            for item in section_data['items_to_avoid']:
+                                instructions_parts.append(f"  - {item}")
+                        if 'instructions' in section_data:
+                            for instruction in section_data['instructions']:
+                                instructions_parts.append(f"- {instruction}")
+                    else:
+                        for item in section_data.get('rules', section_data.get('instructions', [])):
+                            instructions_parts.append(f"- {item}")
+        
+        instructions_parts.append("\nPlease fill out this LinkedIn job application form step by step, following these instructions carefully.")
+        
+        # Join all parts
+        instructions = "\n".join(instructions_parts)
         
         return instructions.strip()
     
